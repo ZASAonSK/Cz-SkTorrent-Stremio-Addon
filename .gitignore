@@ -1,0 +1,40 @@
+# Node.js závislosti
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Logy a dočasné súbory
+*.log
+*.tmp
+
+# Vizuálne debug súbory
+debug.html
+*.cache
+*.DS_Store
+*.swp
+
+# Konfigurácie prostredia
+.env
+.env.local
+.env.*.local
+
+# Zálohy a IDE súbory
+*.bak
+*.old
+*.orig
+.idea/
+.vscode/
+*.sublime*
+
+# Operačný systém
+Thumbs.db
+Desktop.ini
+
+# Skompilované výstupy (ak by si niekedy buildoval)
+dist/
+build/
+
+# Torrenty, ak by si testoval manuálne
+*.torrent

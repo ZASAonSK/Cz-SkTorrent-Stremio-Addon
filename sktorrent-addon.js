@@ -1099,7 +1099,8 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
 
         let spravneFileId = null;
 
-        if (najdenyTorrentObj && najdenyTorrentObj.files && seria && epizoda && (seria !== '1' || epizoda !== '1')) {
+        // ODSTRÁNENÁ ZLÁ PODMIENKA O JEDNOTKÁCH!
+        if (najdenyTorrentObj && najdenyTorrentObj.files && seria !== undefined && epizoda !== undefined) {
             const epCislo = parseInt(epizoda);
             const epStr = String(epCislo).padStart(2, "0");
             const seriaStr = String(seria).padStart(2, "0");
@@ -1118,31 +1119,33 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
 
             const videoSbory = najdenyTorrentObj.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.name));
 
-            for (const reg of epRegexy) {
+            for (let i = 0; i < epRegexy.length; i++) {
+                const reg = epRegexy[i];
                 const zhoda = videoSbory.find(f => reg.test(f.name));
                 if (zhoda) {
                     spravneFileId = zhoda.id;
-                    logSuccess(`[TORBOX PROXY] Pre S${seria}E${epizoda} vybraný súbor s ID ${zhoda.id}: ${zhoda.name}`);
+                    logSuccess(`[TORBOX PROXY] Pre S${seria}E${epizoda} vybraný súbor s ID ${zhoda.id}: ${zhoda.name} (regex č. ${i})`);
                     break;
                 }
             }
 
-            if (spravneFileId === null) {
+            // VYLEPŠENÝ FALLBACK - abecedne namiesto veľkosti
+            if (spravneFileId === null && videoSbory.length > 0) {
                 if (videoSbory.length === 1) {
                     spravneFileId = videoSbory[0].id;
                     logWarn(`[TORBOX PROXY] Zhoda pre epizódu nenájdená, ale pack má len 1 súbor. Púšťam: ${videoSbory[0].name}`);
                 } else {
-                    logError(`[TORBOX PROXY] Zlyhanie! V torrente je ${videoSbory.length} súborov, ale neviem určiť epizódu S${seria}E${epizoda}.`);
-                    return res.status404.send("Torbox nevie identifikovať súbor epizódy v tomto packu.");
+                    videoSbory.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                    spravneFileId = videoSbory[0].id;
+                    logWarn(`[TORBOX PROXY] Zhoda pre epizódu nenájdená. Púšťam prvý súbor podľa abecedy: ${videoSbory[0].name}`);
                 }
             }
-
-
         }
 
         if (spravneFileId === null) {
             spravneFileId = 0;
         }
+
 
         const downloadRes = await axios.get("https://api.torbox.app/v1/api/torrents/requestdl", {
             params: {

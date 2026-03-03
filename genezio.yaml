@@ -1,0 +1,19 @@
+backend:
+    functions:
+        - entry: sktorrent-addon.js
+          handler: handler
+          name: express
+          path: .
+          type: httpServer
+    language:
+        name: js
+        runtime: nodejs20.x
+    path: .
+    scripts:
+        deploy:
+            - npm install
+        local:
+            - npm install
+name: Cz-SkTorrent-Stremio-Addon
+region: eu-central-1
+yamlVersion: 2

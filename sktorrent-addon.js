@@ -1047,7 +1047,12 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 // =========================================================================
 app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
     const { hash, seria, epizoda, config } = req.params;
-    logApi(`TorBox Play Request: Hash: ${hash} | S${seria}E${epizoda}`);
+    
+    // TUTO JE TA DOLEZITA OPRAVA: Vraciame cisla o -1 spat kvoli cache bugu v stremio
+    const realSeria = parseInt(seria) - 1;
+    const realEpizoda = parseInt(epizoda) - 1;
+
+    logApi(`[TORBOX PROXY] TorBox Play Request: Hash: ${hash} | Original z URL S${seria}E${epizoda} -> Opravene na S${realSeria}E${realEpizoda}`);
 
     const userConfig = decodeConfig(config);
     if (!userConfig || !userConfig.torbox) {
@@ -1071,7 +1076,6 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             }
         }
 
-        // Ak torrent nie je v zozname, pridaj ho
         if (!torrentId) {
             const formData = new FormData();
             formData.append("magnet", `magnet:?xt=urn:btih:${hash}`);
@@ -1085,7 +1089,6 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
 
             torrentId = addRes.data?.data?.torrent_id;
 
-            // Pockaj a skus najst znova (nech prebehne inicializacia na Torboxe)
             await new Promise(r => setTimeout(r, 3000));
             const tbRefreshRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
                 headers: { Authorization: `Bearer ${TORBOX_API_KEY}` }
@@ -1099,18 +1102,18 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
 
         let spravneFileId = null;
 
-        // ODSTRANENE ZLE JEDNOTKY !
-        if (najdenyTorrentObj && najdenyTorrentObj.files && seria !== undefined && epizoda !== undefined) {
-            const epCislo = parseInt(epizoda);
+        // Upravene podmienky. Odstranene "!= 1" a pouzitie realSeria / realEpizoda
+        if (najdenyTorrentObj && najdenyTorrentObj.files && !isNaN(realSeria) && !isNaN(realEpizoda)) {
+            const epCislo = parseInt(realEpizoda);
             const epStr = String(epCislo).padStart(2, "0");
-            const seriaStr = String(seria).padStart(2, "0");
+            const seriaStr = String(realSeria).padStart(2, "0");
 
-             const epRegexy = [
+            const epRegexy = [
                 new RegExp(`[\\\\/](?:\\d+\\.\\s*s[eé]rie[\\\\/])?0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"), 
                 new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
-                new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
+                new RegExp(`\\b${realSeria}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
-                new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
+                new RegExp(`\\b${realSeria}x0*${epCislo}\\b`, "i"),
                 new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
                 new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
                 new RegExp(`\\bE${epStr}\\b`, "i"),
@@ -1118,9 +1121,8 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             ];
 
             const videoSbory = najdenyTorrentObj.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.name));
-            
-            // PRIDANÝ LOG - Kolko video suborov vidi Torbox
-            logInfo(`[TORBOX PROXY] V torrente (ID: ${torrentId}) najdených ${videoSbory.length} video suborov. Hladam S${seriaStr}E${epStr}`);
+
+            logInfo(`[TORBOX PROXY] V torrente (ID: ${torrentId}) najdenych ${videoSbory.length} video suborov. Hadam S${seriaStr}E${epStr}`);
 
             for (let i = 0; i < epRegexy.length; i++) {
                 const reg = epRegexy[i];
@@ -1132,11 +1134,11 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
                 }
             }
 
-            if (spravneFileId === null) {
+            if (spravneFileId === null && videoSbory.length > 0) {
                 if (videoSbory.length === 1) {
                     spravneFileId = videoSbory[0].id;
                     logWarn(`[TORBOX PROXY] Nenajdena presna zhoda, ale pack ma len 1 video. Pustam: ID ${spravneFileId} - ${videoSbory[0].name}`);
-                } else if (videoSbory.length > 1) {
+                } else {
                     videoSbory.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
                     spravneFileId = videoSbory[0].id;
                     logWarn(`[TORBOX PROXY] Nenajdena presna zhoda! Pustam prvy subor abecedne: ID ${spravneFileId} - ${videoSbory[0].name}`);
@@ -1161,7 +1163,6 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             headers: { Authorization: `Bearer ${TORBOX_API_KEY}` }
         });
 
-
         const directLink = downloadRes.data?.data;
         if (directLink) {
             res.redirect(302, directLink);
@@ -1174,6 +1175,7 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
         res.status(500).send("Chyba proxy servera.");
     }
 });
+
 
 
 app.get("/:config/download/:hash/:sktId", async (req, res) => {

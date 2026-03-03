@@ -1007,16 +1007,18 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         logSuccess(`Stream request finished in ${trvanie}ms. Returning ${streamy.length} streams to Stremio.`);
 
         // --- ZMENA PRE STREMIO CACHE ---
-        // Uplne vypnutie HTTP cachovania pre streamy, rovnako ako pri manifeste
-        res.set({
-            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-            'Surrogate-Control': 'no-store'
-        });
+        // Zistenie, či zoznam obsahuje nejaký stream, ktorý sa aktuálne sťahuje (⏳)
+        const maUncachedStreamy = streamy.some(s => s.name && s.name.includes("⏳"));
+        
+        // Ak sa niečo sťahuje (⏳), cachujeme len na 1 minútu (60 sekúnd).
+        // Ak sú všetky streamy hotové (⚡), cachujeme to na 1 hodinu (3600 sekúnd).
+        const cacheMaxAge = maUncachedStreamy ? 60 : 3600;
+        
+        res.setHeader('Cache-Control', `max-age=${cacheMaxAge}, stale-while-revalidate=${cacheMaxAge}, stale-if-error=${cacheMaxAge}`);
         // ---------------------------------
 
         return res.json({ streams: streamy });
+
 
     } 
 });

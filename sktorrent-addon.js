@@ -1048,11 +1048,11 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
     const { hash, seria, epizoda, config } = req.params;
     
-    // TUTO JE TA DOLEZITA OPRAVA: Vraciame cisla o -1 spat kvoli cache bugu v stremio
-    const realSeria = parseInt(seria) - 1;
-    const realEpizoda = parseInt(epizoda) - 1;
+    // UZ NEODCITAVAME -1! Stremio uz posiela opravene cisla
+    const realSeria = parseInt(seria);
+    const realEpizoda = parseInt(epizoda);
 
-    logApi(`[TORBOX PROXY] TorBox Play Request: Hash: ${hash} | Original z URL S${seria}E${epizoda} -> Opravene na S${realSeria}E${realEpizoda}`);
+    logApi(`[TORBOX PROXY] TorBox Play Request: Hash: ${hash} | Hladam: S${realSeria}E${realEpizoda}`);
 
     const userConfig = decodeConfig(config);
     if (!userConfig || !userConfig.torbox) {
@@ -1102,25 +1102,18 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
 
         let spravneFileId = null;
 
-        // Upravene podmienky. Odstranene "!= 1" a pouzitie realSeria / realEpizoda
         if (najdenyTorrentObj && najdenyTorrentObj.files && !isNaN(realSeria) && !isNaN(realEpizoda)) {
             const epCislo = parseInt(realEpizoda);
             const epStr = String(epCislo).padStart(2, "0");
             const seriaStr = String(realSeria).padStart(2, "0");
 
-            // Očistené a SPRÁVNE zoradené Regexy, aby prvé hľadali exaktnú zhodu aj série aj epizódy!
             const epRegexy = [
-                // Klasické formáty S01E01, S1E1, atď. (Tieto musia byť vždy prvé!)
                 new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
                 new RegExp(`\\b${realSeria}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${realSeria}x0*${epCislo}\\b`, "i"),
                 new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
-                
-                // SK/CZ formáty s adresármi typu "/01. série/01. epizoda.mkv" MUSÍ MAŤ POVINNÚ sériu!
                 new RegExp(`[\\\\/]?0*${realSeria}\\.\\s*s[eé]rie[\\\\/]0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
-                
-                // Až nakoniec ak sa nič iné nenájde, hľadáme len podľa epizódy
                 new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
                 new RegExp(`\\bE${epStr}\\b`, "i")
             ];
@@ -1180,6 +1173,7 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
         res.status(500).send("Chyba proxy servera.");
     }
 });
+
 
 
 

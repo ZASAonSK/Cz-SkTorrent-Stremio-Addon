@@ -207,15 +207,23 @@ function torrentSediSEpizodou(nazov, seria, epizoda) {
         nazov.match(/\bS(\d{1,2})\s*[-–]\s*S?(\d{1,2})\b/i) ||
         nazov.match(/\bSeason\s*(\d{1,2})\s*[-–]\s*(\d{1,2})\b/i) ||
         nazov.match(/\bSeasons\s*(\d{1,2})\s*[-–]\s*(\d{1,2})\b/i) ||
-        nazov.match(/\b(\d{1,2})\.?\s*[-–]\s*(\d{1,2})\.?\s*s[eé]rie/i); // Pridaná podpora pre CZ/SK Packy
+        nazov.match(/\b(\d{1,2})\.?\s*[-–]\s*(\d{1,2})\.?\s*s[eé]rie\b/i) ||
+        // TOTO JE NOVE: zachyti "Seria 1-13", "Série 1-12", atď.
+        nazov.match(/\bs[eé]ri[ae]\s*(\d{1,2})\s*[-–]\s*(\d{1,2})\b/i); 
 
     if (range) {
-        const a = parseInt(range[1], 10);
-        const b = parseInt(range[2], 10);
-        const lo = Math.min(a, b);
-        const hi = Math.max(a, b);
-        // Ak naša hľadaná séria spadá do tohto rozsahu ("1. - 4."), pustíme ho ako Pack
-        if (seria >= lo && seria <= hi) return true; 
+        // Musíme si dať pozor, ktoré zachytené skupiny čísel idú do 'a' a 'b'.
+        // Pretože pri rôznych regexoch môžu byť zachytené v iných skupinách (vďaka '||')
+        // Najbezpečnejšie je jednoducho nájsť prvé dve čísla z výsledku .match
+        const nums = range.filter(x => x !== undefined && /^\d+$/.test(x));
+        if (nums.length >= 2) {
+            const a = parseInt(nums[0], 10);
+            const b = parseInt(nums[1], 10);
+            const lo = Math.min(a, b);
+            const hi = Math.max(a, b);
+            // Ak naša hľadaná séria spadá do tohto rozsahu ("1. - 4."), pustíme ho ako Pack
+            if (seria >= lo && seria <= hi) return true; 
+        }
     }
 
     const seriaStr = String(seria).padStart(2, "0");

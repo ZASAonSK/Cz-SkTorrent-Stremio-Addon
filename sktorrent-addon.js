@@ -556,9 +556,9 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
             if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
             najdenyIndex = videoSubory[0].index;
             } else {
-            // Ovela širšie regexy, ktoré zachytia "1x07", "S01E07", "01. série/07. Názov", "07 - Nazov"
+            // Vylepšené a extrémne benevolentné regexy
             const epRegexy = [
-                new RegExp(`[\\\\/]0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
+                new RegExp(`[\\\\/](?:\\d+\\.\\s*s[eé]rie[\\\\/])?0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"), // zachytí: "01. série/01. Cartman...mkv"
                 new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
                 new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
@@ -566,34 +566,37 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
                 new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
                 new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
                 new RegExp(`\\bE${epStr}\\b`, "i"),
-                new RegExp(`(^|[\\s._-])0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
+                new RegExp(`(?:^|[\\\\/])[\\s._-]*0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i") // Hľadá na začiatku po ceste: "/01. Nazov.mkv"
             ];
 
-            for (const reg of epRegexy) {
+            let najdenyNazovSuboru = null; // pre účely logovania
+            let pouzityRegex = null;
+
+            for (let i = 0; i < epRegexy.length; i++) {
+                const reg = epRegexy[i];
                 const zhoda = videoSubory.find(f => reg.test(f.path));
                 if (zhoda) {
                     najdenyIndex = zhoda.index;
+                    najdenyNazovSuboru = zhoda.path;
+                    pouzityRegex = i;
                     break;
                 }
             }
 
-            // TOTO JE OPRAVA PRE POKEMONA A SOUTH PARK
             if (najdenyIndex === -1) {
-                // Pokiaľ ide o klasický single-file torrent a my tam nevieme nájsť epizódu
-                // s veľkou pravdepodobnosťou má iba divný názov, vtedy ho zachránime
-                if (videoSubory.length === 1) { 
+                if (videoSubory.length === 1) {
                     najdenyIndex = videoSubory[0].index;
+                    najdenyNazovSuboru = videoSubory[0].path;
+                    logWarn(`[TORRENT: ${t.name}] Nenájdená zhoda pre S${seria}E${epizoda}, ale torrent má len 1 súbor. Používam: ${najdenyNazovSuboru}`);
                 } else {
-                    // Ak má torrent viac súborov (Pack, Part 2, atď.) a naša epizóda tam očividne
-                    // vôbec nie je nájdená pomocou regexov, NEBERIEME HO.
-                    // Týmto vyhodíme Part 2 u Pokemona aj zlý pack u South Parku.
-                    return null; 
+                    logWarn(`[TORRENT: ${t.name}] VYRADENÝ! Vo vnútri ${videoSubory.length} súborov nebol nájdený žiadny, ktorý zodpovedá epizóde S${seria}E${epizoda}. (Ukážka z vnútra: ${videoSubory[0].path})`);
+                    return null; // Part/Pack ktorý nesedí
                 }
+            } else {
+                logSuccess(`[TORRENT: ${t.name}] ÚSPECH! Pre S${seria}E${epizoda} vybraný súbor: ${najdenyNazovSuboru} (zachytené regexom č. ${pouzityRegex})`);
             }
 
             streamObj.fileIdx = najdenyIndex;
-
-
             }
 
     }
@@ -1101,8 +1104,8 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             const epStr = String(epCislo).padStart(2, "0");
             const seriaStr = String(seria).padStart(2, "0");
 
-            const epRegexy = [
-                new RegExp(`[\\\\/]0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
+             const epRegexy = [
+                new RegExp(`[\\\\/](?:\\d+\\.\\s*s[eé]rie[\\\\/])?0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"), 
                 new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
                 new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
@@ -1110,7 +1113,7 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
                 new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
                 new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
                 new RegExp(`\\bE${epStr}\\b`, "i"),
-                new RegExp(`(^|[\\s._-])0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
+                new RegExp(`(?:^|[\\\\/])[\\s._-]*0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
             ];
 
             const videoSbory = najdenyTorrentObj.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.name));
@@ -1119,6 +1122,7 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
                 const zhoda = videoSbory.find(f => reg.test(f.name));
                 if (zhoda) {
                     spravneFileId = zhoda.id;
+                    logSuccess(`[TORBOX PROXY] Pre S${seria}E${epizoda} vybraný súbor s ID ${zhoda.id}: ${zhoda.name}`);
                     break;
                 }
             }
@@ -1126,13 +1130,13 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             if (spravneFileId === null) {
                 if (videoSbory.length === 1) {
                     spravneFileId = videoSbory[0].id;
+                    logWarn(`[TORBOX PROXY] Zhoda pre epizódu nenájdená, ale pack má len 1 súbor. Púšťam: ${videoSbory[0].name}`);
                 } else {
-                    // Ak sme nenašli zhodu vo viac-súborovom torrente (Part), proxy failne radšej,
-                    // než by ti pustil náhodnú/zlú epizódu.
+                    logError(`[TORBOX PROXY] Zlyhanie! V torrente je ${videoSbory.length} súborov, ale neviem určiť epizódu S${seria}E${epizoda}.`);
                     return res.status404.send("Torbox nevie identifikovať súbor epizódy v tomto packu.");
                 }
-
             }
+
 
         }
 

@@ -1108,16 +1108,21 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             const epStr = String(epCislo).padStart(2, "0");
             const seriaStr = String(realSeria).padStart(2, "0");
 
+            // Očistené a SPRÁVNE zoradené Regexy, aby prvé hľadali exaktnú zhodu aj série aj epizódy!
             const epRegexy = [
-                new RegExp(`[\\\\/](?:\\d+\\.\\s*s[eé]rie[\\\\/])?0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"), 
+                // Klasické formáty S01E01, S1E1, atď. (Tieto musia byť vždy prvé!)
                 new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
                 new RegExp(`\\b${realSeria}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${realSeria}x0*${epCislo}\\b`, "i"),
                 new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
+                
+                // SK/CZ formáty s adresármi typu "/01. série/01. epizoda.mkv" MUSÍ MAŤ POVINNÚ sériu!
+                new RegExp(`[\\\\/]?0*${realSeria}\\.\\s*s[eé]rie[\\\\/]0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
+                
+                // Až nakoniec ak sa nič iné nenájde, hľadáme len podľa epizódy
                 new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
-                new RegExp(`\\bE${epStr}\\b`, "i"),
-                new RegExp(`(?:^|[\\\\/])[\\s._-]*0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
+                new RegExp(`\\bE${epStr}\\b`, "i")
             ];
 
             const videoSbory = najdenyTorrentObj.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.name));
@@ -1175,6 +1180,7 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
         res.status(500).send("Chyba proxy servera.");
     }
 });
+
 
 
 

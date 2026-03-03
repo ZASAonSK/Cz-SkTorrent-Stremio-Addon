@@ -554,45 +554,31 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
             
             if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
             najdenyIndex = videoSubory[0].index;
-        } else {
-            // Hladame presne formaty (napr. S01E03, 1x03, 01x03)
-            const prisneRegexy = [
-                new RegExp(`[\\s_.-]${seria}x${epStr}[\\s_.-]`, 'i'),
-                new RegExp(`[\\s_.-]${seriaStr}x${epStr}[\\s_.-]`, 'i'),
-                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, 'i'),
-                new RegExp(`(^|[\\s_.-])${seria}x${epStr}($|[\\s_.-])`, 'i'),
-                new RegExp(`(^|[\\s_.-])${seriaStr}x${epStr}($|[\\s_.-])`, 'i')
-            ];
+            } else {
+                const epRegexy = [
+                    new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
+                    new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
+                    new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
+                    new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
+                    new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
+                    new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
+                    new RegExp(`\\bE${epStr}\\b`, "i"),
+                    new RegExp(`\\b0*${epCislo}\\.?(?:mp4|mkv|avi|m4v)\\b`, "i"),
+                    new RegExp(`\\.-0*${epCislo}\\.-\\.\\.?(?:mp4|mkv|avi|m4v)\\b`, "i")
+                ];
 
-            // Hladame iba slovo Epizoda 3, a nakoniec ciste cislo s priponou
-            const volnejsieRegexy = [
-                new RegExp(`Ep(?:isode)?\\.?\\s*0*${epCislo}(?![0-9])`, 'i'),
-                new RegExp(`(^|[\\s_.-])0*${epCislo}\\.(?:mp4|mkv|avi|m4v)$`, 'i')
-            ];
-
-            // 1. Kolo: Skusime najprisnejsie zhody
-            for (const reg of prisneRegexy) {
-                const zhoda = videoSubory.find(f => reg.test(f.path));
-                if (zhoda) {
-                    najdenyIndex = zhoda.index;
-                    break;
-                }
-            }
-
-            // 2. Kolo: Ak sa nenaslo, skusime volnejsie
-            if (najdenyIndex === -1) {
-                for (const reg of volnejsieRegexy) {
+                for (const reg of epRegexy) {
                     const zhoda = videoSubory.find(f => reg.test(f.path));
                     if (zhoda) {
                         najdenyIndex = zhoda.index;
                         break;
                     }
                 }
+
+                if (najdenyIndex === -1) return null;
+                streamObj.fileIdx = najdenyIndex;
             }
 
-            if (najdenyIndex === -1) return null;
-            streamObj.fileIdx = najdenyIndex;
-        }
     }
 
     // --- FORMÁTOVANIE NOVÉHO TITLE ---
@@ -603,8 +589,8 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
     }
 
     // 1. Český názov / Originálny názov
-    const titleOriginalText = meta?.titleOriginal ? `🎞️ ${meta.titleOriginal}` : "";
-    const titleCzText = meta?.titleCz ? `🇨🇿 ${meta.titleCz}` : "";
+    const titleOriginalText = meta?.titleOriginal ? `${meta.titleOriginal}` : "";
+    const titleCzText = meta?.titleCz ? `${meta.titleCz}` : "";
     const titleLine = titleCzText !== "" && titleOriginalText !== "" 
                       ? `${titleCzText} / ${titleOriginalText}` 
                       : (titleCzText !== "" ? titleCzText : titleOriginalText);
@@ -631,7 +617,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
     else if (analyzaNazvu.includes("480p")) kvality.push("480p");
 
     if (analyzaNazvu.includes("hdr")) kvality.push("HDR");
-    if (analyzaNazvu.includes("dovi") || analyzaNazvu.includes("dv") || analyzaNazvu.includes("vision")) kvality.push("Dolby Vision");
+    if (analyzaNazvu.includes("dovi") || analyzaNazvu.includes("vision")) kvality.push("Dolby Vision");
     if (analyzaNazvu.includes("hevc") || analyzaNazvu.includes("h265") || analyzaNazvu.includes("h.265") || analyzaNazvu.includes("x265")) kvality.push("HEVC");
     else if (analyzaNazvu.includes("x264") || analyzaNazvu.includes("h264") || analyzaNazvu.includes("h.264") || analyzaNazvu.includes("avc")) kvality.push("H.264");
     if (analyzaNazvu.includes("atmos")) kvality.push("Atmos");
@@ -1098,23 +1084,21 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             const epStr = String(epCislo).padStart(2, "0");
             const seriaStr = String(seria).padStart(2, "0");
 
-            const prisneRegexy = [
-                new RegExp(`[\\s_.-]${seria}x${epStr}[\\s_.-]`, 'i'),
-                new RegExp(`[\\s_.-]${seriaStr}x${epStr}[\\s_.-]`, 'i'),
-                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, 'i'),
-                new RegExp(`(^|[\\s_.-])${seria}x${epStr}($|[\\s_.-])`, 'i'),
-                new RegExp(`(^|[\\s_.-])${seriaStr}x${epStr}($|[\\s_.-])`, 'i')
-            ];
-
-            const volnejsieRegexy = [
-                new RegExp(`Ep(?:isode)?\\.?\\s*0*${epCislo}(?![0-9])`, 'i'),
-                new RegExp(`(^|[\\s_.-])0*${epCislo}\\.(?:mp4|mkv|avi|m4v)$`, 'i')
+                        const epRegexy = [
+                new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
+                new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
+                new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
+                new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
+                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
+                new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
+                new RegExp(`\\bE${epStr}\\b`, "i"),
+                new RegExp(`\\b0*${epCislo}\\.?(?:mp4|mkv|avi|m4v)\\b`, "i"),
+                new RegExp(`\\.-0*${epCislo}\\.-\\.\\.?(?:mp4|mkv|avi|m4v)\\b`, "i")
             ];
 
             const videoSbory = najdenyTorrentObj.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.name));
 
-            // 1. Kolo hľadania
-            for (const reg of prisneRegexy) {
+            for (const reg of epRegexy) {
                 const zhoda = videoSbory.find(f => reg.test(f.name));
                 if (zhoda) {
                     spravneFileId = zhoda.id;
@@ -1122,22 +1106,11 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
                 }
             }
 
-            // 2. Kolo hľadania
-            if (spravneFileId === null) {
-                for (const reg of volnejsieRegexy) {
-                    const zhoda = videoSbory.find(f => reg.test(f.name));
-                    if (zhoda) {
-                        spravneFileId = zhoda.id;
-                        break;
-                    }
-                }
-            }
-
-            // Fallback na najvacsi subor, ak ani to nepomoze
             if (spravneFileId === null && videoSbory.length > 0) {
                 videoSbory.sort((a, b) => b.size - a.size);
                 spravneFileId = videoSbory[0].id;
             }
+
         }
 
         if (spravneFileId === null) {

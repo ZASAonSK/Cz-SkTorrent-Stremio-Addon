@@ -4,8 +4,7 @@ Node.js/Express Stremio addon pre SKTorrent, ktorý podporuje multi-user konfigu
 Web konfigurátor
 
 Otvoriť konfiguráciu a vygenerovať inštalačný manifest:
-NEW! https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io/
-https://b8ab33049f87-sk-cztorrent-addon.baby-beamup.club/
+https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io/
 Funkcie
 
     Multi-user config bez pevne natvrdo uložených cookies (UID/pass sa posielajú v konfigurácii URL).

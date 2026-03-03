@@ -555,28 +555,47 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
             if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
             najdenyIndex = videoSubory[0].index;
         } else {
-            const epRegexy = [
-                new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
-                new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
-                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
-                new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
-                new RegExp(`\\b0*${epCislo}\\.(?:mp4|mkv|avi|m4v)$`, "i"),
-                new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
-                new RegExp(`(^|/)[\\s._-]*0*${epCislo}[\\s._-]+.*\\.(?:mp4|mkv|avi|m4v)$`, "i")
+            // Hladame presne formaty (napr. S01E03, 1x03, 01x03)
+            const prisneRegexy = [
+                new RegExp(`[\\s_.-]${seria}x${epStr}[\\s_.-]`, 'i'),
+                new RegExp(`[\\s_.-]${seriaStr}x${epStr}[\\s_.-]`, 'i'),
+                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, 'i'),
+                new RegExp(`(^|[\\s_.-])${seria}x${epStr}($|[\\s_.-])`, 'i'),
+                new RegExp(`(^|[\\s_.-])${seriaStr}x${epStr}($|[\\s_.-])`, 'i')
             ];
 
-            for (const reg of epRegexy) {
-                const zhoda = videoSubory.find(f => reg.test(f.path));
-                if (zhoda) { najdenyIndex = zhoda.index; break; }
-            }
-        }
+            // Hladame iba slovo Epizoda 3, a nakoniec ciste cislo s priponou
+            const volnejsieRegexy = [
+                new RegExp(`Ep(?:isode)?\\.?\\s*0*${epCislo}(?![0-9])`, 'i'),
+                new RegExp(`(^|[\\s_.-])0*${epCislo}\\.(?:mp4|mkv|avi|m4v)$`, 'i')
+            ];
 
-        if (najdenyIndex === -1) return null;
-        streamObj.fileIdx = najdenyIndex;
+            // 1. Kolo: Skusime najprisnejsie zhody
+            for (const reg of prisneRegexy) {
+                const zhoda = videoSubory.find(f => reg.test(f.path));
+                if (zhoda) {
+                    najdenyIndex = zhoda.index;
+                    break;
+                }
+            }
+
+            // 2. Kolo: Ak sa nenaslo, skusime volnejsie
+            if (najdenyIndex === -1) {
+                for (const reg of volnejsieRegexy) {
+                    const zhoda = videoSubory.find(f => reg.test(f.path));
+                    if (zhoda) {
+                        najdenyIndex = zhoda.index;
+                        break;
+                    }
+                }
+            }
+
+            if (najdenyIndex === -1) return null;
+            streamObj.fileIdx = najdenyIndex;
+        }
     }
 
     // --- FORMÁTOVANIE NOVÉHO TITLE ---
-    
     // 0. Očistený SKTorrent Názov
     let originalNazov = t.name.replace(/^Stiahni si\s*/i, "").trim();
     if (originalNazov.toLowerCase().startsWith(t.category.trim().toLowerCase())) {
@@ -584,59 +603,52 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
     }
 
     // 1. Český názov / Originálny názov
-    const titleOriginalText = meta?.titleOriginal || "?";
-    const titleCzText = meta?.titleCz || "?";
-    const titleLine = titleCzText !== titleOriginalText && titleOriginalText !== "?" 
+    const titleOriginalText = meta?.titleOriginal ? `🎞️ ${meta.titleOriginal}` : "";
+    const titleCzText = meta?.titleCz ? `🇨🇿 ${meta.titleCz}` : "";
+    const titleLine = titleCzText !== "" && titleOriginalText !== "" 
                       ? `${titleCzText} / ${titleOriginalText}` 
-                      : titleCzText;
+                      : (titleCzText !== "" ? titleCzText : titleOriginalText);
 
     // 2. Rok filmu / Rozsah rokov pri seriáli
-    let rokText = "?";
+    let rokText = "📅 N/A";
     if (meta?.yearStart) {
-        if (seria !== undefined) { 
-            rokText = meta.yearEnd && meta.yearStart !== meta.yearEnd ? `${meta.yearStart}–${meta.yearEnd}` : String(meta.yearStart);
-        } else { 
-            rokText = String(meta.yearStart);
+        if (seria !== undefined) {
+            rokText = meta.yearEnd && meta.yearStart !== meta.yearEnd ? `📅 ${meta.yearStart}-${meta.yearEnd}` : `📅 ${meta.yearStart}`;
+        } else {
+            rokText = `📅 ${meta.yearStart}`;
         }
     }
 
     // 3. Séria a Epizóda
-    const seriaEpizodaText = (seria !== undefined && epizoda !== undefined) 
-                             ? `Séria: ${seria}  |  Epizóda: ${epizoda}` 
-                             : "";
+    const seriaEpizodaText = (seria !== undefined && epizoda !== undefined) ? `📺 Séria ${seria} • Epizóda ${epizoda}` : "";
 
-    // 4. Kvalita (rozlíšenie a kodeky)
+    // 4. Kvalita, rozlíšenie a kodeky
     const analyzaNazvu = originalNazov.toLowerCase();
     const kvality = [];
-    
     if (analyzaNazvu.includes("2160p") || analyzaNazvu.includes("4k") || analyzaNazvu.includes("uhd")) kvality.push("4K");
     else if (analyzaNazvu.includes("1080p") || analyzaNazvu.includes("fhd")) kvality.push("1080p");
     else if (analyzaNazvu.includes("720p") || analyzaNazvu.includes("hd")) kvality.push("720p");
     else if (analyzaNazvu.includes("480p")) kvality.push("480p");
-    
+
     if (analyzaNazvu.includes("hdr")) kvality.push("HDR");
-    if (analyzaNazvu.includes("dovi") || analyzaNazvu.includes("dv ") || analyzaNazvu.includes("vision")) kvality.push("Dolby Vision");
+    if (analyzaNazvu.includes("dovi") || analyzaNazvu.includes("dv") || analyzaNazvu.includes("vision")) kvality.push("Dolby Vision");
     if (analyzaNazvu.includes("hevc") || analyzaNazvu.includes("h265") || analyzaNazvu.includes("h.265") || analyzaNazvu.includes("x265")) kvality.push("HEVC");
     else if (analyzaNazvu.includes("x264") || analyzaNazvu.includes("h264") || analyzaNazvu.includes("h.264") || analyzaNazvu.includes("avc")) kvality.push("H.264");
     if (analyzaNazvu.includes("atmos")) kvality.push("Atmos");
-    
-    const kvalitaText = kvality.length > 0 ? kvality.join(" | ") : "Kvalita neznáma";
+    const kvalitaText = kvality.length > 0 ? `🎥 ${kvality.join(" • ")}` : "🎥 Kvalita neznáma";
 
     // 5. Veľkosť (s ikonami cd a puzzle)
-    const fileSize = (streamObj.fileIdx !== undefined) 
-        ? (torrentData.files.find(f => f.index === streamObj.fileIdx)?.length || 0) 
-        : (torrentData.files.reduce((acc, f) => acc + (f.length || 0), 0)); 
-    
+    const fileSize = streamObj.fileIdx !== undefined ? 
+        (torrentData.files.find(f => f.index === streamObj.fileIdx)?.length || 0) : 
+        torrentData.files.reduce((acc, f) => acc + (f.length || 0), 0);
     const formatFileSize = formatBytes(fileSize);
-    const velkostText = `📀 ${formatFileSize} | 🧩 ${t.size}`;
+    const velkostText = `💿 ${formatFileSize} (🧩 ${t.size})`;
 
-    // 6. Jazyky (Extrakcia priamo z názvu, preklad do VLAJOK)
+    // 6. Jazyky
     const langMatch = originalNazov.match(/\b(CZ|SK|EN)\b/ig) || [];
     const vlajkyList = langMatch.map(kod => langToFlag[kod.toUpperCase()]).filter(Boolean);
     const unikatneVlajky = [...new Set(vlajkyList)];
-    
-    // Ak sa nenájdu vlajky, dá sa aspoň ten nájdený text (napr. cz) bez zalamovania riadku
-    let jazykText = "❓ Neznámy jazyk";
+    let jazykText = "Neznámy jazyk";
     if (unikatneVlajky.length > 0) {
         jazykText = unikatneVlajky.join(" / ");
     } else if (langMatch.length > 0) {
@@ -645,23 +657,16 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
     }
 
     // --- POSKLADANIE TITLE ---
-    const riadkyTitle = [
-        originalNazov,
-        titleLine,
-        rokText
-    ];
-    
+    const riadkyTitle = [originalNazov, titleLine, rokText];
     if (seriaEpizodaText) riadkyTitle.push(seriaEpizodaText);
-    
     riadkyTitle.push(kvalitaText);
     riadkyTitle.push(velkostText);
-    riadkyTitle.push(`Jazyk: ${jazykText}`);
+    riadkyTitle.push(`🔊 Jazyk: ${jazykText}`);
 
     streamObj.title = riadkyTitle.join("\n");
-
     return streamObj;
-
 }
+
 
 // ===================================================================
 // VLASTNÝ EXPRESS SERVER BEZ `getRouter` Z SDK
@@ -1031,44 +1036,55 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 });
 
 
-// ===================================================================
+// =========================================================================
 // TORBOX PROXY ROUTER
-// ===================================================================
-app.get("/:config/play/:hash/:seria/:epizoda", async (req, res) => {
+// =========================================================================
+app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
     const { hash, seria, epizoda, config } = req.params;
-    logApi(`TorBox Play Request | Hash: ${hash} | S${seria}E${epizoda}`);
-    
+    logApi(`TorBox Play Request: Hash: ${hash} | S${seria}E${epizoda}`);
+
     const userConfig = decodeConfig(config);
-    if (!userConfig || !userConfig.torbox) return res.status(400).send("Chýba TorBox klúč");
+    if (!userConfig || !userConfig.torbox) {
+        return res.status(400).send("Chýba TorBox kľúč.");
+    }
     const TORBOX_API_KEY = userConfig.torbox;
 
     try {
         const tbTorrentsRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
-            headers: { "Authorization": `Bearer ${TORBOX_API_KEY}` }
+            headers: { Authorization: `Bearer ${TORBOX_API_KEY}` }
         });
-        
+
         let torrentId = null;
         let najdenyTorrentObj = null;
 
         if (tbTorrentsRes.data && tbTorrentsRes.data.data) {
             const zoznam = Array.isArray(tbTorrentsRes.data.data) ? tbTorrentsRes.data.data : [tbTorrentsRes.data.data];
             najdenyTorrentObj = zoznam.find(t => t.hash && t.hash.toLowerCase() === hash.toLowerCase());
-            if (najdenyTorrentObj) torrentId = najdenyTorrentObj.id;
+            if (najdenyTorrentObj) {
+                torrentId = najdenyTorrentObj.id;
+            }
         }
 
+        // Ak torrent nie je v zozname, pridaj ho
         if (!torrentId) {
             const formData = new FormData();
             formData.append("magnet", `magnet:?xt=urn:btih:${hash}`);
 
             const addRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", formData, {
-                headers: { "Authorization": `Bearer ${TORBOX_API_KEY}`, ...formData.getHeaders() }
+                headers: {
+                    Authorization: `Bearer ${TORBOX_API_KEY}`,
+                    ...formData.getHeaders()
+                }
             });
+
             torrentId = addRes.data?.data?.torrent_id;
+
+            // Pockaj a skus najst znova (nech prebehne inicializacia na Torboxe)
             await new Promise(r => setTimeout(r, 3000));
-            
             const tbRefreshRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
-                headers: { "Authorization": `Bearer ${TORBOX_API_KEY}` }
+                headers: { Authorization: `Bearer ${TORBOX_API_KEY}` }
             });
+
             if (tbRefreshRes.data && tbRefreshRes.data.data) {
                 const zoznamRefresh = Array.isArray(tbRefreshRes.data.data) ? tbRefreshRes.data.data : [tbRefreshRes.data.data];
                 najdenyTorrentObj = zoznamRefresh.find(t => t.id === torrentId);
@@ -1076,37 +1092,66 @@ app.get("/:config/play/:hash/:seria/:epizoda", async (req, res) => {
         }
 
         let spravneFileId = null;
-        if (najdenyTorrentObj && najdenyTorrentObj.files && seria && epizoda && seria !== "1" && epizoda !== "1") {
+
+        if (najdenyTorrentObj && najdenyTorrentObj.files && seria && epizoda && (seria !== '1' || epizoda !== '1')) {
             const epCislo = parseInt(epizoda);
             const epStr = String(epCislo).padStart(2, "0");
             const seriaStr = String(seria).padStart(2, "0");
 
-            const epRegexy = [
-                new RegExp(`\\b${seria}x${epStr}\\b`, "i"), 
-                new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"), 
-                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"), 
-                new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"), 
-                new RegExp(`\\b0*${epCislo}\\.(?:mp4|mkv|avi|m4v)$`, "i") 
+            const prisneRegexy = [
+                new RegExp(`[\\s_.-]${seria}x${epStr}[\\s_.-]`, 'i'),
+                new RegExp(`[\\s_.-]${seriaStr}x${epStr}[\\s_.-]`, 'i'),
+                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, 'i'),
+                new RegExp(`(^|[\\s_.-])${seria}x${epStr}($|[\\s_.-])`, 'i'),
+                new RegExp(`(^|[\\s_.-])${seriaStr}x${epStr}($|[\\s_.-])`, 'i')
             ];
 
-            const videoSúbory = najdenyTorrentObj.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.name));
+            const volnejsieRegexy = [
+                new RegExp(`Ep(?:isode)?\\.?\\s*0*${epCislo}(?![0-9])`, 'i'),
+                new RegExp(`(^|[\\s_.-])0*${epCislo}\\.(?:mp4|mkv|avi|m4v)$`, 'i')
+            ];
 
-            for (const reg of epRegexy) {
-                const zhoda = videoSúbory.find(f => reg.test(f.name));
-                if (zhoda) { spravneFileId = zhoda.id; break; }
+            const videoSbory = najdenyTorrentObj.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.name));
+
+            // 1. Kolo hľadania
+            for (const reg of prisneRegexy) {
+                const zhoda = videoSbory.find(f => reg.test(f.name));
+                if (zhoda) {
+                    spravneFileId = zhoda.id;
+                    break;
+                }
             }
-            
-            if (spravneFileId === null && videoSúbory.length > 0) {
-                videoSúbory.sort((a, b) => b.size - a.size);
-                spravneFileId = videoSúbory[0].id;
+
+            // 2. Kolo hľadania
+            if (spravneFileId === null) {
+                for (const reg of volnejsieRegexy) {
+                    const zhoda = videoSbory.find(f => reg.test(f.name));
+                    if (zhoda) {
+                        spravneFileId = zhoda.id;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback na najvacsi subor, ak ani to nepomoze
+            if (spravneFileId === null && videoSbory.length > 0) {
+                videoSbory.sort((a, b) => b.size - a.size);
+                spravneFileId = videoSbory[0].id;
             }
         }
 
-        if (spravneFileId === null) spravneFileId = 0;
+        if (spravneFileId === null) {
+            spravneFileId = 0;
+        }
 
         const downloadRes = await axios.get("https://api.torbox.app/v1/api/torrents/requestdl", {
-            params: { token: TORBOX_API_KEY, torrent_id: torrentId, file_id: spravneFileId, zip_link: false },
-            headers: { "Authorization": `Bearer ${TORBOX_API_KEY}` }
+            params: {
+                token: TORBOX_API_KEY,
+                torrent_id: torrentId,
+                file_id: spravneFileId,
+                zip_link: false
+            },
+            headers: { Authorization: `Bearer ${TORBOX_API_KEY}` }
         });
 
         const directLink = downloadRes.data?.data;
@@ -1115,11 +1160,13 @@ app.get("/:config/play/:hash/:seria/:epizoda", async (req, res) => {
         } else {
             res.status(404).send("Torbox nevrátil URL.");
         }
+
     } catch (err) {
         logError("TorBox play proxy error", err);
         res.status(500).send("Chyba proxy servera.");
     }
 });
+
 
 app.get("/:config/download/:hash/:sktId", async (req, res) => {
     const { hash, sktId, config } = req.params;

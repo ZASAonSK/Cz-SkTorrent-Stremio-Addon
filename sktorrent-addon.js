@@ -998,19 +998,21 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             const jeCached = torboxCache[hash] === true;
             const staraKategoria = stream.name.split("\n")[1] || "";
             
-            if (jeCached) {
-                stream.name = `[TB ⚡] SKT\n${staraKategoria}`;
-                const proxySeria = seria || "1";
-                const proxyEpizoda = epizoda || "1";
-                stream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}`;
-            } else {
-                stream.name = `[TB ⏳] SKT\n${staraKategoria}`;
-                stream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
-            }
-            delete stream.infoHash;
-            delete stream.fileIdx;
-            delete stream.sktId;
-            return stream;
+        if (jeCached) {
+            stream.name = `[TB ⚡] SKT\n${staraKategoria}`;
+            // PRIDANIE +1 KVÔLI STREMIO CACHE BUGU: Oklameme stremio, ze ide o inu epizodu
+            const proxySeria = parseInt(seria) + 1;
+            const proxyEpizoda = parseInt(epizoda) + 1;
+            stream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}`;
+        } else {
+            stream.name = `[TB ⏳] SKT\n${staraKategoria}`;
+            stream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
+        }
+        delete stream.infoHash;
+        delete stream.fileIdx;
+        delete stream.sktId;
+        return stream;
+
         });
 
         streamy = streamy.sort((a, b) => {

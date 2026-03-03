@@ -856,9 +856,8 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 
     // 2. ČSFD LINK
     // Snažíme sa použiť primárne český názov z metadát pre ČSFD vyhľadávanie
-    const hlavnyNazov = metaData?.meta?.titleCz || unikatneNazvy[0]; 
-    
-    const csfdLink = await ziskatCsfdUrl(imdbId, hlavnyNazov, vydanyRok, vlastnyTyp);
+        const hlavnyNazov = metaData?.meta?.titleOriginal || unikatneNazvy[0];
+        const csfdLink = await ziskatCsfdUrl(imdbId, hlavnyNazov, vydanyRok, vlastnyTyp);
     
     if (csfdLink) {
         dotazy.add(csfdLink); 

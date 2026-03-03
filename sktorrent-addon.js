@@ -556,9 +556,9 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
             if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
             najdenyIndex = videoSubory[0].index;
             } else {
-                        // Ovela širšie regexy, ktoré zachytia 1x07, S01E07, ale aj priečinky ako "01. série/07. Názov"
+            // Ovela širšie regexy, ktoré zachytia "1x07", "S01E07", "01. série/07. Názov", "07 - Nazov"
             const epRegexy = [
-                new RegExp(`[\\\\/]0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"), // zachytí: "01. série/01. Cartman.mkv"
+                new RegExp(`[\\\\/]0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
                 new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
                 new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
@@ -566,7 +566,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
                 new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
                 new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
                 new RegExp(`\\bE${epStr}\\b`, "i"),
-                new RegExp(`(^|[\\s._-])0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i") // hľadá na začiatku: "03 Pokemon.mkv"
+                new RegExp(`(^|[\\s._-])0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
             ];
 
             for (const reg of epRegexy) {
@@ -577,17 +577,17 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
                 }
             }
 
-            // TOTO JE TO, ČO SI CHCEL: 
-            // Ak sme nenašli zhodu pre našu epizódu (napr. hľadáme EP7, ale stiahlo sa Part 2 kde je len EP30+)
+            // TOTO JE OPRAVA PRE POKEMONA A SOUTH PARK
             if (najdenyIndex === -1) {
-                // Skontrolujeme, čo to vlastne je. Ak je tam veľa súborov (napríklad blbo pomenovaný Pack s 10+ epizódami)
-                // zachránime ho a použijeme prvý súbor. 
-                // Ale ak je tam len pár súborov a nesedia, rovno ho vyhodíme!
-                if (videoSubory.length > 2) { 
-                    videoSubory.sort((a, b) => b.length - a.length);
-                    najdenyIndex = videoSubory[0].index; // Fallback pre packy s neštandardnými názvami
+                // Pokiaľ ide o klasický single-file torrent a my tam nevieme nájsť epizódu
+                // s veľkou pravdepodobnosťou má iba divný názov, vtedy ho zachránime
+                if (videoSubory.length === 1) { 
+                    najdenyIndex = videoSubory[0].index;
                 } else {
-                    return null; // ZABIJEME TO, lebo to očividne nie je naša epizóda a je to len zopár zbytočných súborov (zlý Part)
+                    // Ak má torrent viac súborov (Pack, Part 2, atď.) a naša epizóda tam očividne
+                    // vôbec nie je nájdená pomocou regexov, NEBERIEME HO.
+                    // Týmto vyhodíme Part 2 u Pokemona aj zlý pack u South Parku.
+                    return null; 
                 }
             }
 
@@ -1124,10 +1124,14 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             }
 
             if (spravneFileId === null) {
-                if (videoSbory.length > 2) {
-                    videoSbory.sort((a, b) => b.size - a.size);
+                if (videoSbory.length === 1) {
                     spravneFileId = videoSbory[0].id;
+                } else {
+                    // Ak sme nenašli zhodu vo viac-súborovom torrente (Part), proxy failne radšej,
+                    // než by ti pustil náhodnú/zlú epizódu.
+                    return res.status404.send("Torbox nevie identifikovať súbor epizódy v tomto packu.");
                 }
+
             }
 
         }

@@ -1049,12 +1049,13 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 // =========================================================================
 app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
     const { hash, seria, epizoda, config } = req.params;
-    
-    // UZ NEODCITAVAME -1! Stremio uz posiela opravene cisla
-    const realSeria = parseInt(seria);
-    const realEpizoda = parseInt(epizoda);
 
-    logApi(`[TORBOX PROXY] TorBox Play Request: Hash: ${hash} | Hladam: S${realSeria}E${realEpizoda}`);
+    // MUSÍME ODCÍTAVAŤ -1! Opravujeme to, čo sme kvôli Stremio cache pridali v streame
+    const realSeria = parseInt(seria) - 1;
+    const realEpizoda = parseInt(epizoda) - 1;
+
+    logApi(`[TORBOX PROXY] TorBox Play Request: Hash: ${hash} | Hladam S${realSeria}E${realEpizoda} (Original URL bola S${seria}E${epizoda})`);
+
 
     const userConfig = decodeConfig(config);
     if (!userConfig || !userConfig.torbox) {

@@ -14,7 +14,7 @@ const cors = require("cors");
 const { csfd } = require('node-csfd-api'); 
 
 const PORT = process.env.PORT || 7000; 
-const PUBLIC_URL = "https://b8ab33049f87-sk-cztorrent-addon.baby-beamup.club"; 
+const PUBLIC_URL = "https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io/"; 
 const BASE_URL = "https://sktorrent.eu"; 
 const SEARCH_URL = `${BASE_URL}/torrent/torrents_v2.php`;
 
@@ -1154,3 +1154,4 @@ app.listen(PORT, () => {
     console.log(`🌐 Public URL: ${PUBLIC_URL}`);
     console.log(`======================================================\n`);
 });
+

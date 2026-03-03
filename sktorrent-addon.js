@@ -567,16 +567,27 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
                     new RegExp(`\\.-0*${epCislo}\\.-\\.\\.?(?:mp4|mkv|avi|m4v)\\b`, "i")
                 ];
 
-                for (const reg of epRegexy) {
-                    const zhoda = videoSubory.find(f => reg.test(f.path));
-                    if (zhoda) {
-                        najdenyIndex = zhoda.index;
-                        break;
-                    }
+            for (const reg of epRegexy) {
+                const zhoda = videoSubory.find(f => reg.test(f.path));
+                if (zhoda) {
+                    najdenyIndex = zhoda.index;
+                    break;
                 }
+            }
 
-                if (najdenyIndex === -1) return null;
-                streamObj.fileIdx = najdenyIndex;
+            // FALLBACK ZÁCHRANA: Ak sme nenašli súbor podľa štandardného názvu epizódy, 
+            // nevyhodíme celý torrent. Namiesto toho vezmeme najväčší video súbor z balíka.
+            if (najdenyIndex === -1) {
+                if (videoSubory.length > 0) {
+                    videoSubory.sort((a, b) => b.length - a.length);
+                    najdenyIndex = videoSubory[0].index;
+                } else {
+                    return null; // Ak naozaj nemá žiadne videá, až vtedy ho zahodíme.
+                }
+            }
+
+            streamObj.fileIdx = najdenyIndex;
+
             }
 
     }

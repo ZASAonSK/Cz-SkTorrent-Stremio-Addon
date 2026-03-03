@@ -267,11 +267,12 @@ function torrentSediSEpizodou(nazov, seria, epizoda) {
         if (epizoda >= zaciatok && epizoda <= koniec) return true;
     }
 
-    // Ak nie je špecifikovaná epizóda, ale sedí séria (Alebo obsahuje kľúčové slovo pre celý Pack)
+    // Ak nie je špecifikovaná epizóda, ale sedí séria (Alebo obsahuje kľúčové slovo pre celý Pack / Part)
     const jeToCelaSeria = new RegExp(`\\b${seria}\\.\\s*s[eé]rie\\b`, "i").test(nazov) || 
+                          new RegExp(`\\bs[eé]ri[ae]\\s*${seria}\\b`, "i").test(nazov) || 
                           new RegExp(`\\bSeason\\s*${seria}\\b`, "i").test(nazov) || 
                           new RegExp(`\\bS${seriaStr}\\b`, "i").test(nazov) ||
-                          /\b(Pack|Komplet|Complete|Vol|Volume)\b/i.test(nazov);
+                          /\b(Pack|Komplet|Complete|Vol|Volume|Part|Časť|Cast|1\.\s*-\s*\d{1,2}\.)\b/i.test(nazov);
                           
     return jeToCelaSeria;
 }
@@ -555,17 +556,18 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
             if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
             najdenyIndex = videoSubory[0].index;
             } else {
-                const epRegexy = [
-                    new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
-                    new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
-                    new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
-                    new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
-                    new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
-                    new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
-                    new RegExp(`\\bE${epStr}\\b`, "i"),
-                    new RegExp(`\\b0*${epCislo}\\.?(?:mp4|mkv|avi|m4v)\\b`, "i"),
-                    new RegExp(`\\.-0*${epCislo}\\.-\\.\\.?(?:mp4|mkv|avi|m4v)\\b`, "i")
-                ];
+                        // Ovela širšie regexy, ktoré zachytia 1x07, S01E07, ale aj priečinky ako "01. série/07. Názov"
+            const epRegexy = [
+                new RegExp(`[\\\\/]0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"), // zachytí: "01. série/01. Cartman.mkv"
+                new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
+                new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
+                new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
+                new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
+                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
+                new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
+                new RegExp(`\\bE${epStr}\\b`, "i"),
+                new RegExp(`(^|[\\s._-])0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i") // hľadá na začiatku: "03 Pokemon.mkv"
+            ];
 
             for (const reg of epRegexy) {
                 const zhoda = videoSubory.find(f => reg.test(f.path));
@@ -575,18 +577,22 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
                 }
             }
 
-            // FALLBACK ZÁCHRANA: Ak sme nenašli súbor podľa štandardného názvu epizódy, 
-            // nevyhodíme celý torrent. Namiesto toho vezmeme najväčší video súbor z balíka.
+            // TOTO JE TO, ČO SI CHCEL: 
+            // Ak sme nenašli zhodu pre našu epizódu (napr. hľadáme EP7, ale stiahlo sa Part 2 kde je len EP30+)
             if (najdenyIndex === -1) {
-                if (videoSubory.length > 0) {
+                // Skontrolujeme, čo to vlastne je. Ak je tam veľa súborov (napríklad blbo pomenovaný Pack s 10+ epizódami)
+                // zachránime ho a použijeme prvý súbor. 
+                // Ale ak je tam len pár súborov a nesedia, rovno ho vyhodíme!
+                if (videoSubory.length > 2) { 
                     videoSubory.sort((a, b) => b.length - a.length);
-                    najdenyIndex = videoSubory[0].index;
+                    najdenyIndex = videoSubory[0].index; // Fallback pre packy s neštandardnými názvami
                 } else {
-                    return null; // Ak naozaj nemá žiadne videá, až vtedy ho zahodíme.
+                    return null; // ZABIJEME TO, lebo to očividne nie je naša epizóda a je to len zopár zbytočných súborov (zlý Part)
                 }
             }
 
             streamObj.fileIdx = najdenyIndex;
+
 
             }
 
@@ -1095,7 +1101,8 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
             const epStr = String(epCislo).padStart(2, "0");
             const seriaStr = String(seria).padStart(2, "0");
 
-                        const epRegexy = [
+            const epRegexy = [
+                new RegExp(`[\\\\/]0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
                 new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
                 new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
@@ -1103,8 +1110,7 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
                 new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
                 new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
                 new RegExp(`\\bE${epStr}\\b`, "i"),
-                new RegExp(`\\b0*${epCislo}\\.?(?:mp4|mkv|avi|m4v)\\b`, "i"),
-                new RegExp(`\\.-0*${epCislo}\\.-\\.\\.?(?:mp4|mkv|avi|m4v)\\b`, "i")
+                new RegExp(`(^|[\\s._-])0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
             ];
 
             const videoSbory = najdenyTorrentObj.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.name));
@@ -1117,9 +1123,11 @@ app.get('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
                 }
             }
 
-            if (spravneFileId === null && videoSbory.length > 0) {
-                videoSbory.sort((a, b) => b.size - a.size);
-                spravneFileId = videoSbory[0].id;
+            if (spravneFileId === null) {
+                if (videoSbory.length > 2) {
+                    videoSbory.sort((a, b) => b.size - a.size);
+                    spravneFileId = videoSbory[0].id;
+                }
             }
 
         }

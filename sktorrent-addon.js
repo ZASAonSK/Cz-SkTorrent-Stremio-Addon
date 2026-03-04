@@ -1055,7 +1055,7 @@ app.all('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
 
   logApi(`[TORBOX PROXY] TorBox Play Request: Hash: ${hash} | Hladam S${realSeria}E${realEpizoda} (Original URL bola S${seria}E${epizoda})`);
 
-  const redirectPlaceholder = () => res.redirect(302, `${PUBLICURL}/info-video`);
+  const redirectPlaceholder = () => res.redirect(302, '/info-video');
 
   if (!hash || Number.isNaN(realSeria) || Number.isNaN(realEpizoda) || realSeria <= 0 || realEpizoda <= 0) {
     logWarn(`[TORBOX PROXY] Zle parametre: hash=${hash}, seria=${seria}, epizoda=${epizoda}`);
@@ -1241,25 +1241,16 @@ app.all('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
     const fileId = picked.f.id;
     logSuccess(`[TORBOX PROXY] Vybrany subor: ID ${fileId} | ${picked.f.name} | score=${picked.score} | kind=${picked.pe.kind}`);
 
-    // 4) request direct link
-    const downloadRes = await axios.get('https://api.torbox.app/v1/api/torrents/requestdl', {
-      params: {
-        token: TORBOXAPIKEY,
-        torrentid: torrentId,
-        fileid: fileId,
-        ziplink: false
-      },
-      headers: { Authorization: `Bearer ${TORBOXAPIKEY}` },
-      timeout: 15000
-    });
+// 4) request direct link (TorBox spraví redirect sám)
+return res.redirect(
+  302,
+  `https://api.torbox.app/v1/api/torrents/requestdl` +
+  `?token=${encodeURIComponent(TORBOXAPIKEY)}` +
+  `&torrent_id=${encodeURIComponent(torrentId)}` +
+  `&file_id=${encodeURIComponent(fileId)}` +
+  `&redirect=true`
+);
 
-    const directLink = downloadRes.data?.data;
-    if (!directLink) {
-      logWarn(`[TORBOX PROXY] TorBox nevratil directLink, davam placeholder.`);
-      return redirectPlaceholder();
-    }
-
-    return res.redirect(302, directLink);
   } catch (err) {
     logError('TorBox play proxy error', err);
     return redirectPlaceholder();

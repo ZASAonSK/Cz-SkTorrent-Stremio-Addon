@@ -1001,8 +1001,8 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         if (jeCached) {
             stream.name = `[TB ⚡] SKT\n${staraKategoria}`;
             // PRIDANIE +1 KVÔLI STREMIO CACHE BUGU: Oklameme stremio, ze ide o inu epizodu
-            const proxySeria = parseInt(seria) + 1;
-            const proxyEpizoda = parseInt(epizoda) + 1;
+            const proxySeria = (seria ?? 0) + 1;
+            const proxyEpizoda = (epizoda ?? 0) + 1;
             stream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}`;
         } else {
             stream.name = `[TB ⏳] SKT\n${staraKategoria}`;
@@ -1242,14 +1242,14 @@ app.all('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
     logSuccess(`[TORBOX PROXY] Vybrany subor: ID ${fileId} | ${picked.f.name} | score=${picked.score} | kind=${picked.pe.kind}`);
 
 // 4) request direct link (TorBox spraví redirect sám)
-return res.redirect(
-  302,
+const url =
   `https://api.torbox.app/v1/api/torrents/requestdl` +
   `?token=${encodeURIComponent(TORBOXAPIKEY)}` +
   `&torrent_id=${encodeURIComponent(torrentId)}` +
   `&file_id=${encodeURIComponent(fileId)}` +
-  `&redirect=true`
-);
+  `&redirect=true`;
+
+return res.redirect(302, url);
 
   } catch (err) {
     logError('TorBox play proxy error', err);
@@ -1282,7 +1282,7 @@ app.get("/:config/download/:hash/:sktId", async (req, res) => {
         });
 
 
-        res.redirect(302, `/info-video`);
+        return res.redirect(302, '/info-video');
     } catch (err) {
         logError("TorBox API download/upload error", err);
         res.status(500).send("Chyba API stahovania TorBox.");

@@ -2,7 +2,7 @@
 // TORBOX + SFD API + ADVANCED METADATA + UNIFIED PROXY
 
 const { addonBuilder } = require('stremio-addon-sdk');
-const decode = require('entities');
+const { decode } = require('entities');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const bencode = require('bncode');

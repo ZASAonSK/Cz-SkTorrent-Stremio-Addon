@@ -1054,9 +1054,8 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 app.all('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
   const { hash, seria, epizoda, config } = req.params;
 
-  // v stream URL pridavas +1, tu to musime odcitat
-  const realSeria = parseInt(seria, 10) - 1;
-  const realEpizoda = parseInt(epizoda, 10) - 1;
+const realSeria = parseInt(seria, 10)
+const realEpizoda = parseInt(epizoda, 10)
 
   logApi(`[TORBOX PROXY] TorBox Play Request: Hash: ${hash} | Hladam S${realSeria}E${realEpizoda} (Original URL bola S${seria}E${epizoda})`);
 

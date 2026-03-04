@@ -1056,6 +1056,12 @@ app.all('/:config/play/:hash/:seria/:epizoda', async (req, res) => {
   logApi(`[TORBOX PROXY] TorBox Play Request: Hash: ${hash} | Hladam S${realSeria}E${realEpizoda} (Original URL bola S${seria}E${epizoda})`);
 
   const redirectPlaceholder = () => res.redirect(302, '/info-video');
+  if (req.method === 'HEAD') {
+  res.status(200);
+  res.setHeader('Content-Type', 'video/mp4');
+  res.setHeader('Accept-Ranges', 'bytes');
+  return res.end();
+}
 
   if (!hash || Number.isNaN(realSeria) || Number.isNaN(realEpizoda) || realSeria <= 0 || realEpizoda <= 0) {
     logWarn(`[TORBOX PROXY] Zle parametre: hash=${hash}, seria=${seria}, epizoda=${epizoda}`);

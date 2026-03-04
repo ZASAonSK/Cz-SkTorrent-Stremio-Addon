@@ -1001,9 +1001,14 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         if (jeCached) {
             stream.name = `[TB ⚡] SKT\n${staraKategoria}`;
             // PRIDANIE +1 KVÔLI STREMIO CACHE BUGU: Oklameme stremio, ze ide o inu epizodu
-            const proxySeria = (seria ?? 0) + 1;
-            const proxyEpizoda = (epizoda ?? 0) + 1;
-            stream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}`;
+            // ROZDELENIE FILM / SERIÁL 
+            if (seria !== undefined && epizoda !== undefined) {
+                // Pre seriály: musíme vložiť epizódu do URL, inak Stremio prehrá zlú epizódu v Packu (Cache bug)
+                stream.url = `${PUBLIC_URL}/${config}/playseries/${hash}/${seria}/${epizoda}`;
+            } else {
+                // Pre filmy: nepotrebujeme riešiť epizódy, je to len hash
+                stream.url = `${PUBLIC_URL}/${config}/playmovie/${hash}`;
+            }
         } else {
             stream.name = `[TB ⏳] SKT\n${staraKategoria}`;
             stream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
@@ -1261,6 +1266,131 @@ return res.redirect(302, url);
     logError('TorBox play proxy error', err);
     return redirectPlaceholder();
   }
+});
+// =========================================================================
+// TORBOX PROXY ROUTER - PRE SERIÁLY
+// =========================================================================
+app.all('/:config/playseries/:hash/:seria/:epizoda', async (req, res) => {
+    // Ak to je len HEAD request zo Stremia, vrátime 200 OK a končíme
+    if (req.method === 'HEAD') {
+        res.status(200);
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        return res.end();
+    }
+
+    const { hash, seria, epizoda, config } = req.params;
+    const realSeria = parseInt(seria, 10);
+    const realEpizoda = parseInt(epizoda, 10);
+
+    logApi(`[TORBOX PROXY] SERIÁL: Hash: ${hash} | Hľadám S${realSeria}E${realEpizoda}`);
+    const redirectPlaceholder = () => res.redirect(302, '/info-video');
+
+    if (!hash || Number.isNaN(realSeria) || Number.isNaN(realEpizoda)) return redirectPlaceholder();
+
+    const userConfig = decodeConfig(config);
+    if (!userConfig || !userConfig.torbox) return redirectPlaceholder();
+    const TORBOX_API_KEY = userConfig.torbox;
+
+    try {
+        const hashLower = hash.toLowerCase();
+        let tbTorrent = await getTorrentObjByHashOrId(hashLower, null);
+        
+        // Ak nie je v Torboxe, pokusime sa ho pridat
+        if (!tbTorrent || !tbTorrent.id) {
+            const formData = new FormData();
+            formData.append("magnet", `magnet:?xt=urn:btih:${hash}`);
+            const addRes = await axios.post(`https://api.torbox.app/v1/api/torrents/createtorrent`, formData, {
+                headers: { "Authorization": `Bearer ${TORBOX_API_KEY}`, ...formData.getHeaders() }
+            });
+            const torrentId = addRes.data?.data?.torrent_id;
+            if (torrentId) {
+                for (let i = 0; i < 4; i++) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    tbTorrent = await getTorrentObjByHashOrId(hashLower, torrentId);
+                    if (tbTorrent?.files?.length) break;
+                }
+            }
+        }
+
+        if (!tbTorrent || !tbTorrent.files?.length) return redirectPlaceholder();
+
+        const videoFiles = tbTorrent.files.filter(f => /\\.(mp4|mkv|avi|m4v)$/i.test(f.name || ""));
+        if (videoFiles.length === 0) return redirectPlaceholder();
+
+        // HLADAME EPIZODU
+        let picked = pickBestFile(videoFiles, realSeria, realEpizoda);
+        if (!picked && videoFiles.length === 1) {
+            picked = { f: videoFiles[0] }; // Ak je len 1 video, zober ho
+        }
+
+        if (!picked) return redirectPlaceholder();
+
+        const url = `https://api.torbox.app/v1/api/torrents/requestdl?token=${encodeURIComponent(TORBOX_API_KEY)}&torrent_id=${encodeURIComponent(tbTorrent.id)}&file_id=${encodeURIComponent(picked.f.id)}&redirect=true`;
+        return res.redirect(302, url);
+    } catch (err) {
+        logError("TorBox proxy error (Series)", err);
+        return redirectPlaceholder();
+    }
+});
+
+// =========================================================================
+// TORBOX PROXY ROUTER - PRE FILMY
+// =========================================================================
+app.all('/:config/playmovie/:hash', async (req, res) => {
+    if (req.method === 'HEAD') {
+        res.status(200);
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        return res.end();
+    }
+
+    const { hash, config } = req.params;
+    logApi(`[TORBOX PROXY] FILM: Hash: ${hash} | Hľadám najväčší súbor`);
+    const redirectPlaceholder = () => res.redirect(302, '/info-video');
+
+    if (!hash) return redirectPlaceholder();
+
+    const userConfig = decodeConfig(config);
+    if (!userConfig || !userConfig.torbox) return redirectPlaceholder();
+    const TORBOX_API_KEY = userConfig.torbox;
+
+    try {
+        const hashLower = hash.toLowerCase();
+        let tbTorrent = await getTorrentObjByHashOrId(hashLower, null);
+
+        // Ak nie je v Torboxe, pokusime sa ho pridat
+        if (!tbTorrent || !tbTorrent.id) {
+            const formData = new FormData();
+            formData.append("magnet", `magnet:?xt=urn:btih:${hash}`);
+            const addRes = await axios.post(`https://api.torbox.app/v1/api/torrents/createtorrent`, formData, {
+                headers: { "Authorization": `Bearer ${TORBOX_API_KEY}`, ...formData.getHeaders() }
+            });
+            const torrentId = addRes.data?.data?.torrent_id;
+            if (torrentId) {
+                for (let i = 0; i < 4; i++) {
+                    await new Promise(r => setTimeout(r, 2000));
+                    tbTorrent = await getTorrentObjByHashOrId(hashLower, torrentId);
+                    if (tbTorrent?.files?.length) break;
+                }
+            }
+        }
+
+        if (!tbTorrent || !tbTorrent.files?.length) return redirectPlaceholder();
+
+        const videoFiles = tbTorrent.files.filter(f => /\\.(mp4|mkv|avi|m4v)$/i.test(f.name || ""));
+        if (videoFiles.length === 0) return redirectPlaceholder();
+
+        // PRE FILM CHCEME PROSTE NAJVÄČŠÍ SÚBOR (žiadne hľadanie epizód)
+        videoFiles.sort((a, b) => (b.size || 0) - (a.size || 0));
+        const picked = videoFiles[0];
+
+        const url = `https://api.torbox.app/v1/api/torrents/requestdl?token=${encodeURIComponent(TORBOX_API_KEY)}&torrent_id=${encodeURIComponent(tbTorrent.id)}&file_id=${encodeURIComponent(picked.id)}&redirect=true`;
+        return res.redirect(302, url);
+    } catch (err) {
+        logError("TorBox proxy error (Movie)", err);
+        return redirectPlaceholder();
+    }
 });
 
 app.get("/:config/download/:hash/:sktId", async (req, res) => {

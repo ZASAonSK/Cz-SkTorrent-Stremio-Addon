@@ -655,31 +655,23 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         name: `SKT\n${t.category.toUpperCase()}`,
         title: riadkyTitle.join("\n"),
         description: riadkyTitle.join(" | "), 
-        size: bezpecnaVelkost, 
         behaviorHints: { 
             bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`,
             notWebReady: true,
-            videoSize: bezpecnaVelkost,
+            videoSize: fileSize > 0 ? fileSize : undefined,
             filename: najdenyNazovSuboru || "video.mkv"
         },
-        sktId: t.id, // <-- Dôležité pre tvoj download router!
-        fileName: najdenyNazovSuboru || "video.mkv" // <-- Dôležité pre Proxy a zamedzenie Undefined!
+        // Tieto pomocné polia sa vymažú v mape predtým, než to dostane Stremio
+        sktId: t.id, 
+        fileName: najdenyNazovSuboru || "video.mkv",
+        infoHash: torrentData.infoHash,
+        fileIdx: najdenyIndex === -1 ? 0 : najdenyIndex
     };
 
-    if (userConfig && userConfig.torbox) {
-        const urlSafeHash = torrentData.infoHash.toLowerCase();
-        // PRIAMA URL PRE NUVIO A STREMIO (Obchádza padanie ExoPlayera, žiadne hlavičky)
-        streamObj.url = `https://torbox.app/api/stream?hash=${urlSafeHash}&file_index=${najdenyIndex === -1 ? 0 : najdenyIndex}&token=${userConfig.torbox}`;
-        streamObj.infoHash = torrentData.infoHash;
-    } else {
-        streamObj.infoHash = torrentData.infoHash;
-        streamObj.fileIdx = najdenyIndex === -1 ? 0 : najdenyIndex;
-    }
-
+    // Úplne sme vyhodili podmienky pre Torbox. 
+    // Odovzdávame čistý objekt a mapovanie to vyrieši cez tvoj PROXY router.
     return streamObj;
-
 }
-
 
 
 
@@ -1006,17 +998,21 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             const hash = stream.infoHash.toLowerCase();
             const jeCached = torboxCache[hash] === true;
             const staraKategoria = stream.name.split("\n")[1] || "";
+            // Bezpečné vytiahnutie série a epizódy pre Proxy Router
+            const proxySeria = seria || 0;
+            const proxyEpizoda = epizoda || 0;
             
             if (jeCached) {
-                // JE CACHED - PONECHÁME PRIAMU URL Z vytvoritStream (ŽIADNE proxy = stabilné Nuvio!)
+                // JE CACHED - Vrátime sem tvoj originálny PROXY router, ktorý Nuvio/Stremio miluje!
                 stream.name = `[TB ⚡] SKT\n${staraKategoria}`;
+                stream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent((stream.fileName || "video.mkv").replace(/\//g, "|"))}`;
             } else {
-                // NIE JE CACHED - pouzijeme tvoj download router pre pridanie do cloudu
+                // NIE JE CACHED
                 stream.name = `[TB ⏳] SKT\n${staraKategoria}`;
                 stream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
             }
             
-            // Vyčistíme prebytočné pomocné polia, aby Stremio validátor nespadol
+            // Vyčistíme prebytočné pomocné polia, aby bol stream objekt 100% podľa štandardu
             delete stream.infoHash;
             delete stream.fileIdx;
             delete stream.sktId;
@@ -1024,6 +1020,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             
             return stream;
         });
+
 
 
         streamy = streamy.sort((a, b) => {

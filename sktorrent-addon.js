@@ -650,26 +650,29 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     // -- OŠETRENIE BEZPEČNEJ VEĽKOSTI --
     const bezpecnaVelkost = (fileSize && fileSize > 0) ? fileSize : 1048576; 
 
+    // OČISTENIE NÁZVU SÚBORU OD ZLOŽIEK PRE ANDROID TV (Ochrana pred pádom appky)
+    const povodnySubor = najdenyNazovSuboru || "video.mkv";
+    const cistyNazovSuboru = povodnySubor.split('/').pop().split('\\').pop();
+
     // --- FINÁLNE TVORENIE OBJEKTU PRE STREMIO / NUVIO ---
     let streamObj = {
         name: `SKT\n${t.category.toUpperCase()}`,
         title: riadkyTitle.join("\n"),
-
         
-        // Z behaviorHints sme odstránili videoSize a filename,
-        // lebo ak sú nedefinované alebo prázdne, Stremio môže zlyhať na type validation.
         behaviorHints: { 
-            bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`
+            bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`,
+            videoSize: bezpecnaVelkost,
+            filename: cistyNazovSuboru // POUŽÍVAME ČISTÝ NÁZOV (bez lomítok)
         },
         
-        // Tieto pomocné polia sa vymažú v mape predtým, než to dostane Stremio
         sktId: t.id, 
-        fileName: najdenyNazovSuboru || "video.mkv",
+        fileName: cistyNazovSuboru, // A prenášame ho aj sem pre bezpečnú URL
         infoHash: torrentData.infoHash,
         fileIdx: najdenyIndex === -1 ? 0 : najdenyIndex
     };
 
     return streamObj;
+
 
 }
 
@@ -1007,26 +1010,23 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             const proxySeria = seria || 0;
             const proxyEpizoda = epizoda || 0;
             
-            // Definovanie čistého objektu - iba to, čo Stremio oficiálne podporuje
             let finalStream = {
                 name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
                 title: stream.title,
+                type: vlastnyTyp, 
                 behaviorHints: stream.behaviorHints
             };
 
             if (jeCached) {
-                // Opravený bezpečný replace pre lomítka namiesto regexu s "g"
-                const safeName = (stream.fileName || "video.mkv").split('/').join('|');
-                
-                // JE CACHED - Vrátime sem tvoj originálny PROXY router
-                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(safeName)}`;
+                // Keďže fileName je už čistý, encodeURIComponent ho bezpečne zabalí
+                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(stream.fileName)}`;
             } else {
-                // NIE JE CACHED - Odkaz na sťahovanie
                 finalStream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
             }
             
             return finalStream;
         });
+
 
 
 

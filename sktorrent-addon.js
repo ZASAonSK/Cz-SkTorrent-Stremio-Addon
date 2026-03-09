@@ -650,12 +650,9 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     // -- OŠETRENIE BEZPEČNEJ VEĽKOSTI --
     const bezpecnaVelkost = (fileSize && fileSize > 0) ? fileSize : 1048576; 
 
-    // OČISTENIE NÁZVU SÚBORU (Ochrana pred pádom appky na špeciálnych znakoch a priečinkoch)
+    // OČISTENIE NÁZVU SÚBORU - ponecháme tento tvoj fix, ten je dobrý!
     const povodnySubor = najdenyNazovSuboru || "video.mkv";
     let cistyNazovSuboru = povodnySubor.split('/').pop().split('\\').pop();
-    
-    // TOTO JE MAGICKÝ FIX PRE NUVIO:
-    // Povolí iba a-z, A-Z, čísla, bodky a pomlčky. Všetko ostatné (aj '&', medzery, atď.) nahradí za '_'
     cistyNazovSuboru = cistyNazovSuboru.replace(/[^a-zA-Z0-9.\-]/g, '_');
 
     // --- FINÁLNE TVORENIE OBJEKTU PRE STREMIO / NUVIO ---
@@ -663,26 +660,20 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         name: `SKT\n${t.category.toUpperCase()}`,
         title: riadkyTitle.join("\n"),
         
+        // TOTÁLNE ČISTÉ behaviorHints - vymazaný videoSize a filename, 
+        // nechávame len bingeGroup pre plynulé prechody.
         behaviorHints: { 
-            bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`,
-            videoSize: bezpecnaVelkost,
-            filename: cistyNazovSuboru // Tu pôjde absolútne bezpečný názov
+            bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`
         },
         
         sktId: t.id, 
-        fileName: cistyNazovSuboru, // A prenášame ho aj sem pre bezpečnú URL
+        fileName: cistyNazovSuboru,
         infoHash: torrentData.infoHash,
         fileIdx: najdenyIndex === -1 ? 0 : najdenyIndex
     };
 
     return streamObj;
-
-
-
 }
-
-
-
 // ===================================================================
 // VLASTNÝ EXPRESS SERVER BEZ `getRouter` Z SDK
 // ===================================================================

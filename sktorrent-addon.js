@@ -647,17 +647,24 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     riadkyTitle.push(velkostText);
     riadkyTitle.push(`🔊 Jazyk: ${jazykText}`);
 
+    // -- OŠETRENIE BEZPEČNEJ VEĽKOSTI (Nuvio zahodí streamy, kde je size 0) --
+    // Ak nevieme presnú veľkosť, aspoň tam hodíme 1 MB (1048576 bytov), inak to UI nezobrazí
+    const bezpecnaVelkost = (fileSize && fileSize > 0) ? fileSize : 1048576; 
+
     // --- FINÁLNE TVORENIE OBJEKTU PRE STREMIO / NUVIO ---
     let streamObj = {
         name: `SKT\n${t.category.toUpperCase()}`,
         title: riadkyTitle.join("\n"),
-        description: riadkyTitle.join(" | "), 
-        size: fileSize, 
+        description: riadkyTitle.join(" | ") || "SKTorrent Stream", 
+        size: bezpecnaVelkost, 
+        type: (seria !== undefined && epizoda !== undefined) ? "series" : "movie", // <-- POVINNÉ PRE NUVIO (URL STREAMS)
         behaviorHints: { 
-            bingeGroup: cistyNazov,
-            notWebReady: true
+            bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`, // <-- Nesmie to byť prázdne
+            notWebReady: true,
+            videoSize: bezpecnaVelkost
         }
     };
+
 
     if (najdenyNazovSuboru) {
         streamObj.behaviorHints.filename = najdenyNazovSuboru;

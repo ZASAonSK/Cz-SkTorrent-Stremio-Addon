@@ -652,14 +652,16 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
 
     // --- FINÁLNE TVORENIE OBJEKTU PRE STREMIO / NUVIO ---
     let streamObj = {
-        name: `SKT\n${t.category.toUpperCase()}`,
-        title: riadkyTitle.join("\n"),
-        description: riadkyTitle.join(" | "), 
+        // Tieto tri polia sú Stremio standard
+        name: `SKT\\n${t.category.toUpperCase()}`,
+        title: riadkyTitle.join("\\n"),
+        
+        // Z behaviorHints sme odstránili videoSize a filename,
+        // lebo ak sú nedefinované alebo prázdne, Stremio môže zlyhať na type validation.
         behaviorHints: { 
-            bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`,
-            videoSize: fileSize > 0 ? fileSize : undefined,
-            filename: najdenyNazovSuboru || "video.mkv"
+            bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`
         },
+        
         // Tieto pomocné polia sa vymažú v mape predtým, než to dostane Stremio
         sktId: t.id, 
         fileName: najdenyNazovSuboru || "video.mkv",
@@ -667,9 +669,8 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         fileIdx: najdenyIndex === -1 ? 0 : najdenyIndex
     };
 
-    // Úplne sme vyhodili podmienky pre Torbox. 
-    // Odovzdávame čistý objekt a mapovanie to vyrieši cez tvoj PROXY router.
     return streamObj;
+
 }
 
 
@@ -998,26 +999,24 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         logInfo("TorBox enabled. Preparing streams for TorBox playback...");
         const hasheKONTROLA = streamy.map(s => s.infoHash).filter(Boolean); 
         const torboxCache = await overitTorboxCache(hasheKONTROLA, userConfig.torbox);
-
+        
         streamy = streamy.map(stream => {
             const hash = stream.infoHash.toLowerCase();
             const jeCached = torboxCache[hash] === true;
-            const staraKategoria = stream.name.split("\n")[1] || "";
+            const staraKategoria = stream.name.split("\\n")[1] || "";
             const proxySeria = seria || 0;
             const proxyEpizoda = epizoda || 0;
             
-            // Definovanie čistého objektu podľa Stremio štandardu
+            // Definovanie čistého objektu - iba to, čo Stremio oficiálne podporuje
             let finalStream = {
-                name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
+                name: jeCached ? `[TB ⚡] SKT\\n${staraKategoria}` : `[TB ⏳] SKT\\n${staraKategoria}`,
                 title: stream.title,
-                description: stream.description,
-                type: vlastnyTyp, // KRITICKÉ: "series" alebo "movie"
                 behaviorHints: stream.behaviorHints
             };
 
             if (jeCached) {
                 // JE CACHED - Vrátime sem tvoj originálny PROXY router
-                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent((stream.fileName || "video.mkv").replace(/\//g, "|"))}`;
+                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent((stream.fileName || "video.mkv").replace(/\\//g, "|"))}`;
             } else {
                 // NIE JE CACHED - Odkaz na sťahovanie
                 finalStream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
@@ -1025,6 +1024,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             
             return finalStream;
         });
+
 
 
 

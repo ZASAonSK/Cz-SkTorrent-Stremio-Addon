@@ -517,6 +517,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
     logInfo(`Creating stream for torrent ID: ${t.id} (${t.name})`);
     const torrentData = await stiahnutTorrentData(t.downloadUrl, userAxios);
     if (!torrentData) return null;
+    let najdenyIndex = -1;
 
     const langZhody = t.name.match(/\b([A-Z]{2})\b/g) || [];
     const vlajky = langZhody.map(kod => langToFlag[kod.toUpperCase()]).filter(Boolean);
@@ -563,7 +564,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
             .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }));
 
         if (videoSubory.length === 0) return null;
-        let najdenyIndex = -1;
+        najdenyIndex = -1;
 
         const epCislo = parseInt(epizoda);
         const epStr = String(epCislo).padStart(2, "0");

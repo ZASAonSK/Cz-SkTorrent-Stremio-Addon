@@ -1006,22 +1006,25 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             const proxySeria = seria || 0;
             const proxyEpizoda = epizoda || 0;
             
+            // TOTÁLNE ČISTÝ OBJEKT PRE NUVIO (bez behaviorHints, ktoré spôsobujú pády!)
             let finalStream = {
                 name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
                 title: stream.title,
-                type: vlastnyTyp, 
-                behaviorHints: stream.behaviorHints
+                type: vlastnyTyp 
             };
 
             if (jeCached) {
-                // Keďže fileName je už čistý, encodeURIComponent ho bezpečne zabalí
-                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(stream.fileName)}`;
+                // Bezpečný prenos originálneho názvu späť do nášho servera
+                const safeName = (stream.fileName || "video.mkv").split('/').join('|');
+                
+                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(safeName)}`;
             } else {
                 finalStream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
             }
             
             return finalStream;
         });
+
 
 
 

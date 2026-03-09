@@ -652,9 +652,9 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
 
     // --- FINÁLNE TVORENIE OBJEKTU PRE STREMIO / NUVIO ---
     let streamObj = {
-        // Tieto tri polia sú Stremio standard
-        name: `SKT\\n${t.category.toUpperCase()}`,
-        title: riadkyTitle.join("\\n"),
+        name: `SKT\n${t.category.toUpperCase()}`,
+        title: riadkyTitle.join("\n"),
+
         
         // Z behaviorHints sme odstránili videoSize a filename,
         // lebo ak sú nedefinované alebo prázdne, Stremio môže zlyhať na type validation.

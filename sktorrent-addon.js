@@ -760,7 +760,12 @@ app.get(['/', '/configure'], (req, res) => {
                 
                 try {
                     var jsonString = JSON.stringify(config);
-                    var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)));
+                    // ZMENENÉ: URL-Safe Base64. Zabraňuje lomítkam rozbiť Stremio/Express routing!
+                    var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)))
+                        .replace(/\+/g, '-')
+                        .replace(/\//g, '_')
+                        .replace(/=+$/, '');
+                        
                     var currentUrl = "${PUBLIC_URL}"; 
                     var finalHttpUrl = currentUrl + '/' + encodedConfig + '/manifest.json';
                     
@@ -770,6 +775,7 @@ app.get(['/', '/configure'], (req, res) => {
                     alert('Chyba pri generovaní kódu.');
                     console.error(error);
                 }
+
             }
 
             function copyUrl() {
@@ -809,7 +815,7 @@ const handleManifest = (req, res) => {
         description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
         types: ["movie", "series"],
         catalogs: [],
-        resources: ["stream", "meta"], // Nuvio pri ExoPlayeri po novom niekedy vyžaduje aj meta
+        resources: ["stream"],
         idPrefixes: ["tt"],
         behaviorHints: {
             configurable: true,

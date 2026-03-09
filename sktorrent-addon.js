@@ -664,14 +664,12 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     }
 
     if (userConfig && userConfig.torbox) {
-        // Natívny Proxy spôsob pre Torbox (žiadne redirect linky priamo do TV, Stremio/Nuvio si s týmto poradí samo)
+        const urlSafeHash = torrentData.infoHash.toLowerCase();
+        
+        // Dáme Nuviu priamu URL, v ktorej je zabudovaný tvoj Token. 
+        // Nepridávame proxyHeaders, lebo práve to zhadzuje Nuvio ExoPlayer!
+        streamObj.url = `https://torbox.app/api/stream?hash=${urlSafeHash}&file_index=${najdenyIndex === -1 ? 0 : najdenyIndex}&token=${userConfig.torbox}`;
         streamObj.infoHash = torrentData.infoHash;
-        streamObj.fileIdx = najdenyIndex === -1 ? 0 : najdenyIndex;
-        streamObj.behaviorHints.proxyHeaders = {
-            request: {
-                "Authorization": `Bearer ${userConfig.torbox}`
-            }
-        };
     } else {
         // Fallback pre P2P bez debridu
         streamObj.infoHash = torrentData.infoHash;

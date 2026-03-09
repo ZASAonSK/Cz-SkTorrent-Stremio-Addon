@@ -650,9 +650,13 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     // -- OŠETRENIE BEZPEČNEJ VEĽKOSTI --
     const bezpecnaVelkost = (fileSize && fileSize > 0) ? fileSize : 1048576; 
 
-    // OČISTENIE NÁZVU SÚBORU OD ZLOŽIEK PRE ANDROID TV (Ochrana pred pádom appky)
+    // OČISTENIE NÁZVU SÚBORU (Ochrana pred pádom appky na špeciálnych znakoch a priečinkoch)
     const povodnySubor = najdenyNazovSuboru || "video.mkv";
-    const cistyNazovSuboru = povodnySubor.split('/').pop().split('\\').pop();
+    let cistyNazovSuboru = povodnySubor.split('/').pop().split('\\').pop();
+    
+    // TOTO JE MAGICKÝ FIX PRE NUVIO:
+    // Povolí iba a-z, A-Z, čísla, bodky a pomlčky. Všetko ostatné (aj '&', medzery, atď.) nahradí za '_'
+    cistyNazovSuboru = cistyNazovSuboru.replace(/[^a-zA-Z0-9.\-]/g, '_');
 
     // --- FINÁLNE TVORENIE OBJEKTU PRE STREMIO / NUVIO ---
     let streamObj = {
@@ -662,7 +666,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         behaviorHints: { 
             bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`,
             videoSize: bezpecnaVelkost,
-            filename: cistyNazovSuboru // POUŽÍVAME ČISTÝ NÁZOV (bez lomítok)
+            filename: cistyNazovSuboru // Tu pôjde absolútne bezpečný názov
         },
         
         sktId: t.id, 
@@ -672,6 +676,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     };
 
     return streamObj;
+
 
 
 }

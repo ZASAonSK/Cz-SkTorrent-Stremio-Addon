@@ -657,7 +657,6 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         description: riadkyTitle.join(" | "), 
         behaviorHints: { 
             bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`,
-            notWebReady: true,
             videoSize: fileSize > 0 ? fileSize : undefined,
             filename: najdenyNazovSuboru || "video.mkv"
         },
@@ -1004,28 +1003,29 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             const hash = stream.infoHash.toLowerCase();
             const jeCached = torboxCache[hash] === true;
             const staraKategoria = stream.name.split("\n")[1] || "";
-            // Bezpečné vytiahnutie série a epizódy pre Proxy Router
             const proxySeria = seria || 0;
             const proxyEpizoda = epizoda || 0;
             
+            // Definovanie čistého objektu podľa Stremio štandardu
+            let finalStream = {
+                name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
+                title: stream.title,
+                description: stream.description,
+                type: vlastnyTyp, // KRITICKÉ: "series" alebo "movie"
+                behaviorHints: stream.behaviorHints
+            };
+
             if (jeCached) {
-                // JE CACHED - Vrátime sem tvoj originálny PROXY router, ktorý Nuvio/Stremio miluje!
-                stream.name = `[TB ⚡] SKT\n${staraKategoria}`;
-                stream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent((stream.fileName || "video.mkv").replace(/\//g, "|"))}`;
+                // JE CACHED - Vrátime sem tvoj originálny PROXY router
+                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent((stream.fileName || "video.mkv").replace(/\//g, "|"))}`;
             } else {
-                // NIE JE CACHED
-                stream.name = `[TB ⏳] SKT\n${staraKategoria}`;
-                stream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
+                // NIE JE CACHED - Odkaz na sťahovanie
+                finalStream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
             }
             
-            // Vyčistíme prebytočné pomocné polia, aby bol stream objekt 100% podľa štandardu
-            delete stream.infoHash;
-            delete stream.fileIdx;
-            delete stream.sktId;
-            delete stream.fileName;
-            
-            return stream;
+            return finalStream;
         });
+
 
 
 

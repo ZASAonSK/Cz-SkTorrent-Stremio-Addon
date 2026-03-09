@@ -528,6 +528,13 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     let najdenyIndex = -1;
     let najdenyNazovSuboru = null;
 
+    // --- OČISTENIE NÁZVU (Hneď na začiatku, aby ho videl streamObj) ---
+    let cistyNazov = t.name.replace(/^Stiahni si\s*/i, "").trim();
+    if (cistyNazov.toLowerCase().startsWith(t.category.trim().toLowerCase())) {
+        cistyNazov = cistyNazov.slice(t.category.length).trim();
+    }
+
+    // --- VYHĽADANIE KONKRÉTNEJ EPIZÓDY ---
     if (seria !== undefined && epizoda !== undefined) {
         const videoSubory = torrentData.files
             .filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.path))
@@ -587,12 +594,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         }
     }
 
-    // --- FORMÁTOVANIE NOVÉHO TITLE ---
-    let originalNazov = t.name.replace(/^Stiahni si\s*/i, "").trim();
-    if (originalNazov.toLowerCase().startsWith(t.category.trim().toLowerCase())) {
-        originalNazov = originalNazov.slice(t.category.length).trim();
-    }
-
+    // --- FORMÁTOVANIE METADÁT PRE TITLE ---
     const titleOriginalText = meta?.titleOriginal ? `${meta.titleOriginal}` : "";
     const titleCzText = meta?.titleCz ? `${meta.titleCz}` : "";
     const titleLine = titleCzText !== "" && titleOriginalText !== "" ? `${titleCzText} / ${titleOriginalText}` : (titleCzText !== "" ? titleCzText : titleOriginalText);
@@ -608,7 +610,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
 
     const seriaEpizodaText = (seria !== undefined && epizoda !== undefined) ? `📺 Séria ${seria} • Epizóda ${epizoda}` : "";
 
-    const analyzaNazvu = originalNazov.toLowerCase();
+    const analyzaNazvu = cistyNazov.toLowerCase();
     const kvality = [];
     if (analyzaNazvu.includes("2160p") || analyzaNazvu.includes("4k") || analyzaNazvu.includes("uhd")) kvality.push("4K");
     else if (analyzaNazvu.includes("1080p") || analyzaNazvu.includes("fhd")) kvality.push("1080p");
@@ -628,7 +630,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     const formatFileSize = formatBytes(fileSize);
     const velkostText = `💿 ${formatFileSize} (🧩 ${t.size})`;
 
-    const langMatch = originalNazov.match(/\b(CZ|SK|EN)\b/ig) || [];
+    const langMatch = cistyNazov.match(/\b(CZ|SK|EN)\b/ig) || [];
     const vlajkyList = langMatch.map(kod => langToFlag[kod.toUpperCase()]).filter(Boolean);
     const unikatneVlajky = [...new Set(vlajkyList)];
     let jazykText = "Neznámy jazyk";
@@ -639,18 +641,18 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         jazykText = textoveJazyky.join(" / ");
     }
 
-    const riadkyTitle = [originalNazov, titleLine, rokText];
+    const riadkyTitle = [cistyNazov, titleLine, rokText];
     if (seriaEpizodaText) riadkyTitle.push(seriaEpizodaText);
     riadkyTitle.push(kvalitaText);
     riadkyTitle.push(velkostText);
     riadkyTitle.push(`🔊 Jazyk: ${jazykText}`);
 
-    // --- FINÁLNE TVORENIE OBJEKTU ---
+    // --- FINÁLNE TVORENIE OBJEKTU PRE STREMIO / NUVIO ---
     let streamObj = {
         name: `SKT\n${t.category.toUpperCase()}`,
         title: riadkyTitle.join("\n"),
-        description: riadkyTitle.join(" | "), // Pridané pre Nuvio (aby nespadol pri hľadaní info textu)
-        size: fileSize, // Pridané pre Nuvio
+        description: riadkyTitle.join(" | "), 
+        size: fileSize, 
         behaviorHints: { 
             bingeGroup: cistyNazov,
             notWebReady: true
@@ -658,7 +660,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     };
 
     if (najdenyNazovSuboru) {
-        streamObj.behaviorHints.filename = najdenyNazovSuboru; // Pomáha s titulkami
+        streamObj.behaviorHints.filename = najdenyNazovSuboru;
     }
 
     if (userConfig && userConfig.torbox) {
@@ -678,6 +680,7 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
 
     return streamObj;
 }
+
 
 
 

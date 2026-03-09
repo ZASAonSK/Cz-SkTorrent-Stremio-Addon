@@ -513,7 +513,7 @@ async function stiahnutSurovyTorrent(url, userAxios) {
     });
 }
 
-async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
+async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     logInfo(`Creating stream for torrent ID: ${t.id} (${t.name})`);
     const torrentData = await stiahnutTorrentData(t.downloadUrl, userAxios);
     if (!torrentData) return null;
@@ -1010,7 +1010,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     
     // POSIELAME `metaInfo` do `vytvoritStream`
     let streamy = (await Promise.all(
-        torrenty.map(t => execLimit(() => vytvoritStream(t, seria, epizoda, userAxios, metaInfo)))
+        torrenty.map(t => execLimit(() => vytvoritStream(t, seria, epizoda, userAxios, metaInfo, userConfig)))
     )).filter(Boolean);
 
     if (userConfig.torbox && streamy.length > 0) {

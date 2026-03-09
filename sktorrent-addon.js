@@ -524,46 +524,9 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     logInfo(`Creating stream for torrent ID: ${t.id} (${t.name})`);
     const torrentData = await stiahnutTorrentData(t.downloadUrl, userAxios);
     if (!torrentData) return null;
+    
     let najdenyIndex = -1;
-
-    const langZhody = t.name.match(/\b([A-Z]{2})\b/g) || [];
-    const vlajky = langZhody.map(kod => langToFlag[kod.toUpperCase()]).filter(Boolean);
-    const vlajkyText = vlajky.length ? `\n${vlajky.join(" / ")}` : "";
-
-    let cistyNazov = t.name.replace(/^Stiahni si\s*/i, "").trim();
-    if (cistyNazov.toLowerCase().startsWith(t.category.trim().toLowerCase())) {
-        cistyNazov = cistyNazov.slice(t.category.length).trim();
-    }
-
-    // Dôležité: Vyberieme skutočnú veľkosť konkrétneho súboru (nie celého balíka)
-    const skutosnaVelkostVBytoch = najdenyIndex !== -1 ? 
-        (torrentData.files.find(f => f.index === najdenyIndex)?.length || 0) : 
-        torrentData.files.reduce((acc, f) => acc + (f.length || 0), 0);
-
-    let streamObj = {
-        name: `SKT\n${t.category.toUpperCase()}`,
-        // 1. POVINNÉ PRE NUVIO: Musí mať size a musí to byť ČÍSLO, inak ExoPlayer spadne pri UI loadingu
-        size: skutosnaVelkostVBytoch, 
-        behaviorHints: { 
-            bingeGroup: cistyNazov,
-            notWebReady: true // Pomáha Nuvio TV pripraviť buffer
-        }
-    };
-
-    // 2. NAJDÔLEŽITEJŠIA ZMENA: 
-    // Ak máme Torbox, neposielame Nuvio TV 'infoHash' (ktorý by TV muselo proxy-ovať), 
-    // ale rovno mu vygenerujeme priamu HTTP linku z Torboxu. 
-    // Týmto to obíde debrid/proxy chyby ExoPlayera, ktoré ho zhadzujú.
-    if (userConfig && userConfig.torbox) {
-        const urlSafeHash = torrentData.infoHash.toLowerCase();
-        streamObj.url = `https://torbox.app/api/stream?hash=${urlSafeHash}&file_index=${najdenyIndex === -1 ? 0 : najdenyIndex}&token=${userConfig.torbox}`;
-        streamObj.infoHash = torrentData.infoHash; // <--- PRIDAJ TOTO SPÄŤ, aby .toLowerCase() nepadalo
-    } else {
-        // Fallback: len pre Stremio PC/Mobil (Ak nemajú zadaný kľúč)
-        streamObj.infoHash = torrentData.infoHash;
-        streamObj.fileIdx = najdenyIndex === -1 ? 0 : najdenyIndex;
-    }
-
+    let najdenyNazovSuboru = null;
 
     if (seria !== undefined && epizoda !== undefined) {
         const videoSubory = torrentData.files
@@ -571,7 +534,6 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
             .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }));
 
         if (videoSubory.length === 0) return null;
-        najdenyIndex = -1;
 
         const epCislo = parseInt(epizoda);
         const epStr = String(epCislo).padStart(2, "0");
@@ -586,10 +548,10 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
             
             if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
             najdenyIndex = videoSubory[0].index;
-            } else {
-            // Vylepšené a extrémne benevolentné regexy
+            najdenyNazovSuboru = videoSubory[0].path;
+        } else {
             const epRegexy = [
-                new RegExp(`[\\\\/](?:\\d+\\.\\s*s[eé]rie[\\\\/])?0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"), // zachytí: "01. série/01. Cartman...mkv"
+                new RegExp(`[\\\\/](?:\\d+\\.\\s*s[eé]rie[\\\\/])?0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
                 new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
                 new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
                 new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
@@ -597,11 +559,8 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
                 new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
                 new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
                 new RegExp(`\\bE${epStr}\\b`, "i"),
-                new RegExp(`(?:^|[\\\\/])[\\s._-]*0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i") // Hľadá na začiatku po ceste: "/01. Nazov.mkv"
+                new RegExp(`(?:^|[\\\\/])[\\s._-]*0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
             ];
-
-            let najdenyNazovSuboru = null; // pre účely logovania
-            let pouzityRegex = null;
 
             for (let i = 0; i < epRegexy.length; i++) {
                 const reg = epRegexy[i];
@@ -609,7 +568,6 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
                 if (zhoda) {
                     najdenyIndex = zhoda.index;
                     najdenyNazovSuboru = zhoda.path;
-                    pouzityRegex = i;
                     break;
                 }
             }
@@ -618,36 +576,27 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
                 if (videoSubory.length === 1) {
                     najdenyIndex = videoSubory[0].index;
                     najdenyNazovSuboru = videoSubory[0].path;
-                    logWarn(`[TORRENT: ${t.name}] Nenájdená zhoda pre S${seria}E${epizoda}, ale torrent má len 1 súbor. Používam: ${najdenyNazovSuboru}`);
+                    logWarn(`[TORRENT: ${t.name}] Nenájdená zhoda pre S${seria}E${epizoda}, ale použijem: ${najdenyNazovSuboru}`);
                 } else {
-                    logWarn(`[TORRENT: ${t.name}] VYRADENÝ! Vo vnútri ${videoSubory.length} súborov nebol nájdený žiadny, ktorý zodpovedá epizóde S${seria}E${epizoda}. (Ukážka z vnútra: ${videoSubory[0].path})`);
-                    return null; // Part/Pack ktorý nesedí
+                    logWarn(`[TORRENT: ${t.name}] VYRADENÝ! Vo vnútri ${videoSubory.length} súborov nebol nájdený žiadny zodpovedajúci S${seria}E${epizoda}.`);
+                    return null; 
                 }
             } else {
-                logSuccess(`[TORRENT: ${t.name}] ÚSPECH! Pre S${seria}E${epizoda} vybraný súbor: ${najdenyNazovSuboru} (zachytené regexom č. ${pouzityRegex})`);
+                logSuccess(`[TORRENT: ${t.name}] ÚSPECH! Pre S${seria}E${epizoda} vybraný súbor: ${najdenyNazovSuboru}`);
             }
-
-            streamObj.fileIdx = najdenyIndex;
-            streamObj.fileName = najdenyNazovSuboru || ""; // ← PRIDAJ
-            }
-
+        }
     }
 
     // --- FORMÁTOVANIE NOVÉHO TITLE ---
-    // 0. Očistený SKTorrent Názov
     let originalNazov = t.name.replace(/^Stiahni si\s*/i, "").trim();
     if (originalNazov.toLowerCase().startsWith(t.category.trim().toLowerCase())) {
         originalNazov = originalNazov.slice(t.category.length).trim();
     }
 
-    // 1. Český názov / Originálny názov
     const titleOriginalText = meta?.titleOriginal ? `${meta.titleOriginal}` : "";
     const titleCzText = meta?.titleCz ? `${meta.titleCz}` : "";
-    const titleLine = titleCzText !== "" && titleOriginalText !== "" 
-                      ? `${titleCzText} / ${titleOriginalText}` 
-                      : (titleCzText !== "" ? titleCzText : titleOriginalText);
+    const titleLine = titleCzText !== "" && titleOriginalText !== "" ? `${titleCzText} / ${titleOriginalText}` : (titleCzText !== "" ? titleCzText : titleOriginalText);
 
-    // 2. Rok filmu / Rozsah rokov pri seriáli
     let rokText = "📅 N/A";
     if (meta?.yearStart) {
         if (seria !== undefined) {
@@ -657,10 +606,8 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         }
     }
 
-    // 3. Séria a Epizóda
     const seriaEpizodaText = (seria !== undefined && epizoda !== undefined) ? `📺 Séria ${seria} • Epizóda ${epizoda}` : "";
 
-    // 4. Kvalita, rozlíšenie a kodeky
     const analyzaNazvu = originalNazov.toLowerCase();
     const kvality = [];
     if (analyzaNazvu.includes("2160p") || analyzaNazvu.includes("4k") || analyzaNazvu.includes("uhd")) kvality.push("4K");
@@ -675,14 +622,12 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     if (analyzaNazvu.includes("atmos")) kvality.push("Atmos");
     const kvalitaText = kvality.length > 0 ? `🎥 ${kvality.join(" • ")}` : "🎥 Kvalita neznáma";
 
-    // 5. Veľkosť (s ikonami cd a puzzle)
-    const fileSize = streamObj.fileIdx !== undefined ? 
-        (torrentData.files.find(f => f.index === streamObj.fileIdx)?.length || 0) : 
+    const fileSize = najdenyIndex !== -1 ? 
+        (torrentData.files.find(f => f.index === najdenyIndex)?.length || 0) : 
         torrentData.files.reduce((acc, f) => acc + (f.length || 0), 0);
     const formatFileSize = formatBytes(fileSize);
     const velkostText = `💿 ${formatFileSize} (🧩 ${t.size})`;
 
-    // 6. Jazyky
     const langMatch = originalNazov.match(/\b(CZ|SK|EN)\b/ig) || [];
     const vlajkyList = langMatch.map(kod => langToFlag[kod.toUpperCase()]).filter(Boolean);
     const unikatneVlajky = [...new Set(vlajkyList)];
@@ -694,16 +639,46 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         jazykText = textoveJazyky.join(" / ");
     }
 
-    // --- POSKLADANIE TITLE ---
     const riadkyTitle = [originalNazov, titleLine, rokText];
     if (seriaEpizodaText) riadkyTitle.push(seriaEpizodaText);
     riadkyTitle.push(kvalitaText);
     riadkyTitle.push(velkostText);
     riadkyTitle.push(`🔊 Jazyk: ${jazykText}`);
 
-    streamObj.title = riadkyTitle.join("\n");
+    // --- FINÁLNE TVORENIE OBJEKTU ---
+    let streamObj = {
+        name: `SKT\n${t.category.toUpperCase()}`,
+        title: riadkyTitle.join("\n"),
+        description: riadkyTitle.join(" | "), // Pridané pre Nuvio (aby nespadol pri hľadaní info textu)
+        size: fileSize, // Pridané pre Nuvio
+        behaviorHints: { 
+            bingeGroup: cistyNazov,
+            notWebReady: true
+        }
+    };
+
+    if (najdenyNazovSuboru) {
+        streamObj.behaviorHints.filename = najdenyNazovSuboru; // Pomáha s titulkami
+    }
+
+    if (userConfig && userConfig.torbox) {
+        // Natívny Proxy spôsob pre Torbox (žiadne redirect linky priamo do TV, Stremio/Nuvio si s týmto poradí samo)
+        streamObj.infoHash = torrentData.infoHash;
+        streamObj.fileIdx = najdenyIndex === -1 ? 0 : najdenyIndex;
+        streamObj.behaviorHints.proxyHeaders = {
+            request: {
+                "Authorization": `Bearer ${userConfig.torbox}`
+            }
+        };
+    } else {
+        // Fallback pre P2P bez debridu
+        streamObj.infoHash = torrentData.infoHash;
+        streamObj.fileIdx = najdenyIndex === -1 ? 0 : najdenyIndex;
+    }
+
     return streamObj;
 }
+
 
 
 // ===================================================================

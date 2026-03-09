@@ -527,12 +527,35 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta) {
         cistyNazov = cistyNazov.slice(t.category.length).trim();
     }
 
+    // Dôležité: Vyberieme skutočnú veľkosť konkrétneho súboru (nie celého balíka)
+    const skutosnaVelkostVBytoch = najdenyIndex !== -1 ? 
+        (torrentData.files.find(f => f.index === najdenyIndex)?.length || 0) : 
+        torrentData.files.reduce((acc, f) => acc + (f.length || 0), 0);
+
     let streamObj = {
         name: `SKT\n${t.category.toUpperCase()}`,
-        behaviorHints: { bingeGroup: cistyNazov },
-        infoHash: torrentData.infoHash,
-        sktId: t.id
+        // 1. POVINNÉ PRE NUVIO: Musí mať size a musí to byť ČÍSLO, inak ExoPlayer spadne pri UI loadingu
+        size: skutosnaVelkostVBytoch, 
+        behaviorHints: { 
+            bingeGroup: cistyNazov,
+            notWebReady: true // Pomáha Nuvio TV pripraviť buffer
+        }
     };
+
+    // 2. NAJDÔLEŽITEJŠIA ZMENA: 
+    // Ak máme Torbox, neposielame Nuvio TV 'infoHash' (ktorý by TV muselo proxy-ovať), 
+    // ale rovno mu vygenerujeme priamu HTTP linku z Torboxu. 
+    // Týmto to obíde debrid/proxy chyby ExoPlayera, ktoré ho zhadzujú.
+    if (userConfig && userConfig.torbox) {
+        const urlSafeHash = torrentData.infoHash.toLowerCase();
+        // Ak používaš iný API endpoint pre priame linky z Torboxu, vlož ho sem
+        streamObj.url = `https://torbox.app/api/stream?hash=${urlSafeHash}&file_index=${najdenyIndex === -1 ? 0 : najdenyIndex}&token=${userConfig.torbox}`;
+    } else {
+        // Fallback: len pre Stremio PC/Mobil (Ak nemajú zadaný kľúč)
+        streamObj.infoHash = torrentData.infoHash;
+        streamObj.fileIdx = najdenyIndex === -1 ? 0 : najdenyIndex;
+    }
+
 
     if (seria !== undefined && epizoda !== undefined) {
         const videoSubory = torrentData.files
@@ -809,7 +832,7 @@ const handleManifest = (req, res) => {
         description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
         types: ["movie", "series"],
         catalogs: [],
-        resources: ["stream"],
+        resources: ["stream", "meta"], // Nuvio pri ExoPlayeri po novom niekedy vyžaduje aj meta
         idPrefixes: ["tt"],
         behaviorHints: {
             configurable: true,

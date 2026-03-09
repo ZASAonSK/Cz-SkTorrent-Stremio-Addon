@@ -1003,20 +1003,23 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         streamy = streamy.map(stream => {
             const hash = stream.infoHash.toLowerCase();
             const jeCached = torboxCache[hash] === true;
-            const staraKategoria = stream.name.split("\\n")[1] || "";
+            const staraKategoria = stream.name.split("\n")[1] || "";
             const proxySeria = seria || 0;
             const proxyEpizoda = epizoda || 0;
             
             // Definovanie čistého objektu - iba to, čo Stremio oficiálne podporuje
             let finalStream = {
-                name: jeCached ? `[TB ⚡] SKT\\n${staraKategoria}` : `[TB ⏳] SKT\\n${staraKategoria}`,
+                name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
                 title: stream.title,
                 behaviorHints: stream.behaviorHints
             };
 
             if (jeCached) {
+                // Opravený bezpečný replace pre lomítka namiesto regexu s "g"
+                const safeName = (stream.fileName || "video.mkv").split('/').join('|');
+                
                 // JE CACHED - Vrátime sem tvoj originálny PROXY router
-                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent((stream.fileName || "video.mkv").replace(/\\//g, "|"))}`;
+                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(safeName)}`;
             } else {
                 // NIE JE CACHED - Odkaz na sťahovanie
                 finalStream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
@@ -1024,6 +1027,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             
             return finalStream;
         });
+
 
 
 

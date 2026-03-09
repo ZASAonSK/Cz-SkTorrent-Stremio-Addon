@@ -108,15 +108,19 @@ function formatBytes(bytes) {
 
 // ÚPLNE ZMENENÁ FUNKCIA (bez použitia withCache z tvojej Map)
 async function overitTorboxCache(infoHashes, torboxKey) {
-    if (!torboxKey || infoHashes.length === 0) return {};
+    if (!torboxKey || !infoHashes || infoHashes.length === 0) return {};
     
-    const unikatneHashe = [...new Set(infoHashes)].map(h => h.toLowerCase());
+    // TOTO JE TA OPRAVA: Najprv vyfiltruje vsetko co nie je undefined/null a az potom robi toLowerCase
+    const platneHashe = infoHashes.filter(h => h && typeof h === 'string');
+    if (platneHashe.length === 0) return {};
+
+    const unikatneHashe = [...new Set(platneHashe)].map(h => h.toLowerCase());
     const hashString = unikatneHashe.sort().join(",");
     
     logApi(`Checking TorBox cache directly for ${unikatneHashe.length} hashes`);
     try {
         const res = await axios.get(`https://api.torbox.app/v1/api/torrents/checkcached`, {
-            params: { hash: hashString, format: "list" }, // rovno posli spojeny string
+            params: { hash: hashString, format: "list" },
             headers: { "Authorization": `Bearer ${torboxKey}` },
             timeout: 5000
         });
@@ -124,7 +128,9 @@ async function overitTorboxCache(infoHashes, torboxKey) {
         const cacheMap = {};
         if (res.data && res.data.success && res.data.data) {
             const poleDat = Array.isArray(res.data.data) ? res.data.data : [res.data.data];
-            poleDat.forEach(item => { if (item.hash) cacheMap[item.hash.toLowerCase()] = true; });
+            poleDat.forEach(item => { 
+                if (item && item.hash) cacheMap[item.hash.toLowerCase()] = true; 
+            });
         }
         logSuccess(`TorBox cache check complete. Found ${Object.keys(cacheMap).length} cached items.`);
         return cacheMap;
@@ -133,6 +139,7 @@ async function overitTorboxCache(infoHashes, torboxKey) {
         return {};
     }
 }
+
 
 
 // ===================================================================
@@ -549,8 +556,8 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     // Týmto to obíde debrid/proxy chyby ExoPlayera, ktoré ho zhadzujú.
     if (userConfig && userConfig.torbox) {
         const urlSafeHash = torrentData.infoHash.toLowerCase();
-        // Ak používaš iný API endpoint pre priame linky z Torboxu, vlož ho sem
         streamObj.url = `https://torbox.app/api/stream?hash=${urlSafeHash}&file_index=${najdenyIndex === -1 ? 0 : najdenyIndex}&token=${userConfig.torbox}`;
+        streamObj.infoHash = torrentData.infoHash; // <--- PRIDAJ TOTO SPÄŤ, aby .toLowerCase() nepadalo
     } else {
         // Fallback: len pre Stremio PC/Mobil (Ak nemajú zadaný kľúč)
         streamObj.infoHash = torrentData.infoHash;

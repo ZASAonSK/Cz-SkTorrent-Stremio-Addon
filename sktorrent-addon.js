@@ -150,54 +150,55 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
         logApi(`Hľadám ČSFD dáta pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
         
         try {
-            // Pomocná funkcia na zlúčenie kategórií
-            const zlucVysledky = (rezultat) => {
-                let pole = [];
-                if (vlastnyTyp === 'series') {
-                    pole = [
-                        ...(rezultat.tvSeries || []),
-                        ...(rezultat.tvShows || []),
-                        ...(rezultat.movies || []) // Fallback
-                    ];
-                } else if (vlastnyTyp === 'movie') {
-                    pole = rezultat.movies || [];
-                } else {
-                    pole = [
-                        ...(rezultat.movies || []), 
-                        ...(rezultat.tvSeries || []), 
-                        ...(rezultat.tvShows || [])
-                    ];
+            // Použijeme vlastný axios dotaz namiesto knižnice, ktorá padá
+            const searchUrl = `https://www.csfd.cz/hledat/?q=${encodeURIComponent(nazov)}`;
+            const res = await axios.get(searchUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                },
+                timeout: 5000
+            });
+
+            // ČSFD nás pri exaktnej zhode ihneď presmeruje na profil!
+            // To znamená, že ak URL v odpovedi už nie je "hledat/?q=", máme priamo profil
+            if (res.request && res.request.res && res.request.res.responseUrl) {
+                const finalUrl = res.request.res.responseUrl;
+                if (!finalUrl.includes('/hledat/')) {
+                    logSuccess(`ČSFD auto-redirect zafungoval, priamo nájdená URL: ${finalUrl}`);
+                    return finalUrl;
                 }
-                return pole;
-            };
-
-            let hladanie = await csfd.search(nazov);
-            let vsetkyVysledky = zlucVysledky(hladanie);
-
-            // FIX: Ak ČSFD urobilo "auto-redirect" na profil, node-csfd-api vráti 0 výsledkov.
-            // Preto ako záchranu vyhľadáme názov spoločne s rokom (The Grand Tour 2016).
-            if (vsetkyVysledky.length === 0 && rok) {
-                const nazovSRokom = `${nazov} ${rok}`;
-                logInfo(`CSFD auto-redirect pasca. Skúšam hľadať znova s rokom: ${nazovSRokom}`);
-                hladanie = await csfd.search(nazovSRokom);
-                vsetkyVysledky = zlucVysledky(hladanie);
             }
 
-            if (vsetkyVysledky.length === 0) {
-                logWarn(`ČSFD nenašlo žiadne ${vlastnyTyp} výsledky pre: ${nazov}`);
-                return null;
+            // Ak to nebol redirect, prechádzame zoznam výsledkov z vyhľadávania
+            const $ = cheerio.load(res.data);
+            let najdenyOdkaz = null;
+
+            // Vyhľadáme všetky výsledky v sekciách (Filmy, Seriály, TV Pořady...)
+            $('.article-content article').each((i, el) => {
+                const odkaz = $(el).find('header h3 a').attr('href');
+                const rokText = $(el).find('header span.info').text().replace(/[()]/g, '').trim();
+                const najdenyRok = parseInt(rokText);
+                
+                // Ak sedí odkaz a rok je rovnaký (alebo +- 1)
+                if (odkaz && (rok === undefined || najdenyRok === rok || najdenyRok === rok - 1 || najdenyRok === rok + 1)) {
+                    najdenyOdkaz = odkaz;
+                    return false; // ukončenie slučky
+                }
+            });
+
+            // Ak nenašlo podľa roku, zober aspoň prvý možný
+            if (!najdenyOdkaz) {
+                najdenyOdkaz = $('.article-content article header h3 a').first().attr('href');
             }
 
-            let najdeny = vsetkyVysledky.find(v => v.year === rok || v.year === (rok - 1) || v.year === (rok + 1));
-            if (!najdeny) {
-                najdeny = vsetkyVysledky[0];
+            if (najdenyOdkaz) {
+                const csfdUrl = `https://www.csfd.cz${najdenyOdkaz}`;
+                logSuccess(`Úspešne nájdená ČSFD URL z vyhľadávania: ${csfdUrl}`);
+                return csfdUrl;
             }
 
-            let urlPath = najdeny.url;
-            const csfdUrl = urlPath.startsWith('http') ? urlPath : `https://www.csfd.cz${urlPath}`;
-            
-            logSuccess(`Úspešne nájdená ČSFD URL: ${csfdUrl}`);
-            return csfdUrl;
+            logWarn(`ČSFD nenašlo nič pre: ${nazov}`);
+            return null;
 
         } catch (error) {
             logError(`Chyba pri získavaní ČSFD URL pre ${nazov}`, error);
@@ -205,6 +206,7 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
         }
     });
 }
+
 
 
 // ===================================================================

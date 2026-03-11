@@ -142,7 +142,9 @@ async function overitTorboxCache(infoHashes, torboxKey) {
 
 
 
+// ===================================================================
 // ZÍSKANIE ČSFD LINKU CEZ node-csfd-api
+// ===================================================================
 async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
     return withCache(`csfd_url_v2:${imdbId}`, 86400000, async () => {
         logApi(`Hľadám ČSFD dáta pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
@@ -150,15 +152,12 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
             const hladanie = await csfd.search(nazov);
             
             let vsetkyVysledky = [];
-            if (vlastnyTyp === 'series') {
-                vsetkyVysledky = hladanie.tvSeries || [];
-            } else if (vlastnyTyp === 'movie') {
-                vsetkyVysledky = hladanie.movies || [];
+            if (vlastnyTyp === "series" && hladanie.tvSeries) {
+                vsetkyVysledky = hladanie.tvSeries;
+            } else if (vlastnyTyp === "movie" && hladanie.movies) {
+                vsetkyVysledky = hladanie.movies;
             } else {
-                vsetkyVysledky = [
-                    ...(hladanie.movies || []), 
-                    ...(hladanie.tvSeries || [])
-                ];
+                vsetkyVysledky = [...(hladanie.movies || []), ...(hladanie.tvSeries || [])];
             }
 
             if (vsetkyVysledky.length === 0) {
@@ -166,25 +165,20 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
                 return null;
             }
 
-            let najdeny = vsetkyVysledky.find(v => v.year === rok || v.year === (rok - 1) || v.year === (rok + 1));
-            
-            if (!najdeny) {
-                najdeny = vsetkyVysledky[0];
-            }
+            let najdeny = vsetkyVysledky.find(v => v.year === rok || v.year === rok - 1 || v.year === rok + 1);
+            if (!najdeny) najdeny = vsetkyVysledky[0];
 
             let urlPath = najdeny.url;
-            const csfdUrl = urlPath.startsWith('http') ? urlPath : `https://www.csfd.cz${urlPath}`;
+            const csfdUrl = urlPath.startsWith("http") ? urlPath : `https://www.csfd.cz${urlPath}`;
             
-            logSuccess(`Úspešne nájdená ČSFD URL: ${csfdUrl}`);
+            logSuccess(`Úspešne nájdené ČSFD URL: ${csfdUrl}`);
             return csfdUrl;
-            
         } catch (error) {
             logError(`Chyba pri získavaní ČSFD URL pre ${nazov}`, error);
             return null;
         }
     });
 }
-
 
 // ===================================================================
 // FILTRE PRE NÁZVY A SERIÁLY
@@ -433,10 +427,7 @@ async function hladatTorrenty(dotaz, userAxios, maxPages = 1) {
                     const bunka = rodic.closest("td");
                     const text = bunka.text().replace(/\s+/g, " ").trim();
                     const odkaz = rodic.attr("href") || "";
-                    let nazov = rodic.attr("title") || "";
-                    if (!nazov || nazov.trim() === "") {
-                        nazov = text.split(/=\s*CSFD/i)[0].split(/Velkost\s/i)[0].trim();
-                    }
+                    const nazov = rodic.attr("title") || "";
                     const torrentId = odkaz.split("id=").pop();
                     
                     if (videnieIds.has(torrentId)) return; // Prevencia duplikátov
@@ -1040,10 +1031,13 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 
         const maUncachedStreamy = streamy.some(s => s.name && s.name.includes("⏳"));
         const cacheMaxAge = maUncachedStreamy ? 60 : 3600;
- res.setHeader('Cache-Control', `max-age=${cacheMaxAge}, stale-while-revalidate=${cacheMaxAge}, stale-if-error=${cacheMaxAge}`);
-    return res.json({ streams: streamy });
-    }
-    return res.json({ streams: streamy });
+        res.setHeader('Cache-Control', `max-age=${cacheMaxAge}, stale-while-revalidate=${cacheMaxAge}, stale-if-error=${cacheMaxAge}`);
+        // ---------------------------------
+
+        return res.json({ streams: streamy });
+
+
+    } 
 });
 
 

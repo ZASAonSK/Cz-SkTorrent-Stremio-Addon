@@ -148,45 +148,64 @@ async function overitTorboxCache(infoHashes, torboxKey) {
 async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
     return withCache(`csfd_url_v2:${imdbId}`, 86400000, async () => {
         logApi(`Hľadám ČSFD dáta pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
+        
         try {
-            const hladanie = await csfd.search(nazov);
-            
-        let vsetkyVysledky = [];
-        if (vlastnyTyp === 'series') {
-            vsetkyVysledky = [
-                ...(hladanie.tvSeries || []), 
-                ...(hladanie.tvShows || []), 
-                ...(hladanie.tvPrograms || []) // Pre istotu, kôli node-csfd-api štruktúre
-            ];
-        } else if (vlastnyTyp === 'movie') {
-            vsetkyVysledky = hladanie.movies || [];
-        } else {
-            vsetkyVysledky = [
-                ...(hladanie.movies || []), 
-                ...(hladanie.tvSeries || []), 
-                ...(hladanie.tvShows || [])
-            ];
-        }
+            // Pomocná funkcia na zlúčenie kategórií
+            const zlucVysledky = (rezultat) => {
+                let pole = [];
+                if (vlastnyTyp === 'series') {
+                    pole = [
+                        ...(rezultat.tvSeries || []),
+                        ...(rezultat.tvShows || []),
+                        ...(rezultat.movies || []) // Fallback
+                    ];
+                } else if (vlastnyTyp === 'movie') {
+                    pole = rezultat.movies || [];
+                } else {
+                    pole = [
+                        ...(rezultat.movies || []), 
+                        ...(rezultat.tvSeries || []), 
+                        ...(rezultat.tvShows || [])
+                    ];
+                }
+                return pole;
+            };
+
+            let hladanie = await csfd.search(nazov);
+            let vsetkyVysledky = zlucVysledky(hladanie);
+
+            // FIX: Ak ČSFD urobilo "auto-redirect" na profil, node-csfd-api vráti 0 výsledkov.
+            // Preto ako záchranu vyhľadáme názov spoločne s rokom (The Grand Tour 2016).
+            if (vsetkyVysledky.length === 0 && rok) {
+                const nazovSRokom = `${nazov} ${rok}`;
+                logInfo(`CSFD auto-redirect pasca. Skúšam hľadať znova s rokom: ${nazovSRokom}`);
+                hladanie = await csfd.search(nazovSRokom);
+                vsetkyVysledky = zlucVysledky(hladanie);
+            }
 
             if (vsetkyVysledky.length === 0) {
                 logWarn(`ČSFD nenašlo žiadne ${vlastnyTyp} výsledky pre: ${nazov}`);
                 return null;
             }
 
-            let najdeny = vsetkyVysledky.find(v => v.year === rok || v.year === rok - 1 || v.year === rok + 1);
-            if (!najdeny) najdeny = vsetkyVysledky[0];
+            let najdeny = vsetkyVysledky.find(v => v.year === rok || v.year === (rok - 1) || v.year === (rok + 1));
+            if (!najdeny) {
+                najdeny = vsetkyVysledky[0];
+            }
 
             let urlPath = najdeny.url;
-            const csfdUrl = urlPath.startsWith("http") ? urlPath : `https://www.csfd.cz${urlPath}`;
+            const csfdUrl = urlPath.startsWith('http') ? urlPath : `https://www.csfd.cz${urlPath}`;
             
-            logSuccess(`Úspešne nájdené ČSFD URL: ${csfdUrl}`);
+            logSuccess(`Úspešne nájdená ČSFD URL: ${csfdUrl}`);
             return csfdUrl;
+
         } catch (error) {
             logError(`Chyba pri získavaní ČSFD URL pre ${nazov}`, error);
             return null;
         }
     });
 }
+
 
 // ===================================================================
 // FILTRE PRE NÁZVY A SERIÁLY

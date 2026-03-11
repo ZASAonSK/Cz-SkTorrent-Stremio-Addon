@@ -142,73 +142,48 @@ async function overitTorboxCache(infoHashes, torboxKey) {
 
 
 
-// ===================================================================
 // ZÍSKANIE ČSFD LINKU CEZ node-csfd-api
-// ===================================================================
 async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
     return withCache(`csfd_url_v2:${imdbId}`, 86400000, async () => {
         logApi(`Hľadám ČSFD dáta pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
-        
         try {
-            const urlHladania = `https://www.csfd.cz/hledat/?q=${encodeURIComponent(nazov)}`;
+            const hladanie = await csfd.search(nazov);
             
-            // Pošleme dopyt priamo na ČSFD
-            const odpoved = await axios.get(urlHladania, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                },
-                timeout: 5000
-            });
-
-            // FIX: Ak ČSFD urobí auto-redirect z vyhľadávania priamo na profil
-            // spoznáme to tak, že finálna URL adresa už neobsahuje "/hledat/"
-            if (odpoved.request && odpoved.request.res && odpoved.request.res.responseUrl) {
-                const finalnaUrl = odpoved.request.res.responseUrl;
-                if (!finalnaUrl.includes('/hledat/')) {
-                    logSuccess(`ČSFD auto-redirect zachytený! Priamy link: ${finalnaUrl}`);
-                    return finalnaUrl;
-                }
+            let vsetkyVysledky = [];
+            if (vlastnyTyp === 'series') {
+                vsetkyVysledky = hladanie.tvSeries || [];
+            } else if (vlastnyTyp === 'movie') {
+                vsetkyVysledky = hladanie.movies || [];
+            } else {
+                vsetkyVysledky = [
+                    ...(hladanie.movies || []), 
+                    ...(hladanie.tvSeries || [])
+                ];
             }
 
-            // Ak to nebol redirect (viac výsledkov), tak si pomocou cheerio vytiahneme prvý najlepší
-            const $ = cheerio.load(odpoved.data);
-            let njadenyLink = null;
-
-            // Vyhľadá len výsledky
-            $('.article-content article').each((index, element) => {
-                const odkaz = $(element).find('header h3 a').attr('href');
-                const rokText = $(element).find('header span.info').text().replace(/[()]/g, '').trim();
-                const najdenyRok = parseInt(rokText);
-                
-                // Uplatnenie malej tolerancie +/- 1 rok
-                if (odkaz && (rok === undefined || najdenyRok === rok || najdenyRok === rok - 1 || najdenyRok === rok + 1)) {
-                    njadenyLink = odkaz;
-                    return false; // ukončí .each slučku
-                }
-            });
-
-            if (!njadenyLink) {
-                // Ako fallback zoberie úplne prvý odkaz
-                njadenyLink = $('.article-content article header h3 a').first().attr('href');
+            if (vsetkyVysledky.length === 0) {
+                logWarn(`ČSFD nenašlo žiadne ${vlastnyTyp} výsledky pre: ${nazov}`);
+                return null;
             }
 
-            if (njadenyLink) {
-                const csfdUrl = njadenyLink.startsWith('http') ? njadenyLink : `https://www.csfd.cz${njadenyLink}`;
-                logSuccess(`Úspešne nájdená ČSFD URL zoznamu: ${csfdUrl}`);
-                return csfdUrl;
+            let najdeny = vsetkyVysledky.find(v => v.year === rok || v.year === (rok - 1) || v.year === (rok + 1));
+            
+            if (!najdeny) {
+                najdeny = vsetkyVysledky[0];
             }
 
-            logWarn(`ČSFD nenášlo žiadne výsledky pre: ${nazov}`);
-            return null;
-
+            let urlPath = najdeny.url;
+            const csfdUrl = urlPath.startsWith('http') ? urlPath : `https://www.csfd.cz${urlPath}`;
+            
+            logSuccess(`Úspešne nájdená ČSFD URL: ${csfdUrl}`);
+            return csfdUrl;
+            
         } catch (error) {
             logError(`Chyba pri získavaní ČSFD URL pre ${nazov}`, error);
             return null;
         }
     });
 }
-
-
 
 
 // ===================================================================

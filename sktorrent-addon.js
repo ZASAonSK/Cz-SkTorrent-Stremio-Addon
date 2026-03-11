@@ -151,14 +151,22 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
         try {
             const hladanie = await csfd.search(nazov);
             
-            let vsetkyVysledky = [];
-            if (vlastnyTyp === "series" && hladanie.tvSeries) {
-                vsetkyVysledky = hladanie.tvSeries;
-            } else if (vlastnyTyp === "movie" && hladanie.movies) {
-                vsetkyVysledky = hladanie.movies;
-            } else {
-                vsetkyVysledky = [...(hladanie.movies || []), ...(hladanie.tvSeries || [])];
-            }
+        let vsetkyVysledky = [];
+        if (vlastnyTyp === 'series') {
+            vsetkyVysledky = [
+                ...(hladanie.tvSeries || []), 
+                ...(hladanie.tvShows || []), 
+                ...(hladanie.tvPrograms || []) // Pre istotu, kôli node-csfd-api štruktúre
+            ];
+        } else if (vlastnyTyp === 'movie') {
+            vsetkyVysledky = hladanie.movies || [];
+        } else {
+            vsetkyVysledky = [
+                ...(hladanie.movies || []), 
+                ...(hladanie.tvSeries || []), 
+                ...(hladanie.tvShows || [])
+            ];
+        }
 
             if (vsetkyVysledky.length === 0) {
                 logWarn(`ČSFD nenašlo žiadne ${vlastnyTyp} výsledky pre: ${nazov}`);

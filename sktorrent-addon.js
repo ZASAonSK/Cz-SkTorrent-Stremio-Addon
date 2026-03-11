@@ -650,21 +650,20 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     // -- OŠETRENIE BEZPEČNEJ VEĽKOSTI --
     const bezpecnaVelkost = (fileSize && fileSize > 0) ? fileSize : 1048576; 
 
-    // OČISTENIE NÁZVU SÚBORU - ponecháme tento tvoj fix, ten je dobrý!
+    // OČISTENIE NÁZVU SÚBORU
     const povodnySubor = najdenyNazovSuboru || "video.mkv";
     let cistyNazovSuboru = povodnySubor.split('/').pop().split('\\').pop();
     cistyNazovSuboru = cistyNazovSuboru.replace(/[^a-zA-Z0-9.\-]/g, '_');
 
-    // --- FINÁLNE TVORENIE OBJEKTU PRE STREMIO / NUVIO ---
+    // --- FINÁLNE TVORENIE OBJEKTU
     let streamObj = {
         name: `SKT\n${t.category.toUpperCase()}`,
         title: riadkyTitle.join("\n"),
-        
-        // TOTÁLNE ČISTÉ behaviorHints - vymazaný videoSize a filename, 
-        // nechávame len bingeGroup pre plynulé prechody.
+
         behaviorHints: { 
-            bingeGroup: cistyNazov ? `skt-${cistyNazov}` : `skt-${t.id}`
+            bingeGroup: `skt-${t.id}`
         },
+
         
         sktId: t.id, 
         fileName: cistyNazovSuboru,
@@ -1006,32 +1005,22 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             const proxySeria = seria || 0;
             const proxyEpizoda = epizoda || 0;
             
-            // TOTÁLNE ČISTÝ OBJEKT PRE NUVIO (bez behaviorHints, ktoré spôsobujú pády!)
             let finalStream = {
                 name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
                 title: stream.title,
-                type: vlastnyTyp 
+                type: vlastnyTyp,
+                behaviorHints: stream.behaviorHints
             };
 
+
             if (jeCached) {
-                // Bezpečný prenos originálneho názvu späť do nášho servera
                 const safeName = (stream.fileName || "video.mkv").split('/').join('|');
-                
                 finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(safeName)}`;
             } else {
                 finalStream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
             }
-            
             return finalStream;
         });
-
-
-
-
-
-
-
-
         streamy = streamy.sort((a, b) => {
             const aCached = a.name.includes("⚡") ? 1 : 0;
             const bCached = b.name.includes("⚡") ? 1 : 0;
@@ -1043,14 +1032,8 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         const trvanie = Date.now() - startCas;
         logSuccess(`Stream request finished in ${trvanie}ms. Returning ${streamy.length} streams to Stremio.`);
 
-        // --- ZMENA PRE STREMIO CACHE ---
-        // Zistenie, či zoznam obsahuje nejaký stream, ktorý sa aktuálne sťahuje (⏳)
         const maUncachedStreamy = streamy.some(s => s.name && s.name.includes("⏳"));
-        
-        // Ak sa niečo sťahuje (⏳), cachujeme len na 1 minútu (60 sekúnd).
-        // Ak sú všetky streamy hotové (⚡), cachujeme to na 1 hodinu (3600 sekúnd).
         const cacheMaxAge = maUncachedStreamy ? 60 : 3600;
-        
         res.setHeader('Cache-Control', `max-age=${cacheMaxAge}, stale-while-revalidate=${cacheMaxAge}, stale-if-error=${cacheMaxAge}`);
         // ---------------------------------
 

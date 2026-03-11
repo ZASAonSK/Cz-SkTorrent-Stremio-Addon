@@ -150,54 +150,55 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
         logApi(`Hľadám ČSFD dáta pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
         
         try {
-            // Použijeme vlastný axios dotaz namiesto knižnice, ktorá padá
-            const searchUrl = `https://www.csfd.cz/hledat/?q=${encodeURIComponent(nazov)}`;
-            const res = await axios.get(searchUrl, {
+            const urlHladania = `https://www.csfd.cz/hledat/?q=${encodeURIComponent(nazov)}`;
+            
+            // Pošleme dopyt priamo na ČSFD
+            const odpoved = await axios.get(urlHladania, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 },
                 timeout: 5000
             });
 
-            // ČSFD nás pri exaktnej zhode ihneď presmeruje na profil!
-            // To znamená, že ak URL v odpovedi už nie je "hledat/?q=", máme priamo profil
-            if (res.request && res.request.res && res.request.res.responseUrl) {
-                const finalUrl = res.request.res.responseUrl;
-                if (!finalUrl.includes('/hledat/')) {
-                    logSuccess(`ČSFD auto-redirect zafungoval, priamo nájdená URL: ${finalUrl}`);
-                    return finalUrl;
+            // FIX: Ak ČSFD urobí auto-redirect z vyhľadávania priamo na profil
+            // spoznáme to tak, že finálna URL adresa už neobsahuje "/hledat/"
+            if (odpoved.request && odpoved.request.res && odpoved.request.res.responseUrl) {
+                const finalnaUrl = odpoved.request.res.responseUrl;
+                if (!finalnaUrl.includes('/hledat/')) {
+                    logSuccess(`ČSFD auto-redirect zachytený! Priamy link: ${finalnaUrl}`);
+                    return finalnaUrl;
                 }
             }
 
-            // Ak to nebol redirect, prechádzame zoznam výsledkov z vyhľadávania
-            const $ = cheerio.load(res.data);
-            let najdenyOdkaz = null;
+            // Ak to nebol redirect (viac výsledkov), tak si pomocou cheerio vytiahneme prvý najlepší
+            const $ = cheerio.load(odpoved.data);
+            let njadenyLink = null;
 
-            // Vyhľadáme všetky výsledky v sekciách (Filmy, Seriály, TV Pořady...)
-            $('.article-content article').each((i, el) => {
-                const odkaz = $(el).find('header h3 a').attr('href');
-                const rokText = $(el).find('header span.info').text().replace(/[()]/g, '').trim();
+            // Vyhľadá len výsledky
+            $('.article-content article').each((index, element) => {
+                const odkaz = $(element).find('header h3 a').attr('href');
+                const rokText = $(element).find('header span.info').text().replace(/[()]/g, '').trim();
                 const najdenyRok = parseInt(rokText);
                 
-                // Ak sedí odkaz a rok je rovnaký (alebo +- 1)
+                // Uplatnenie malej tolerancie +/- 1 rok
                 if (odkaz && (rok === undefined || najdenyRok === rok || najdenyRok === rok - 1 || najdenyRok === rok + 1)) {
-                    najdenyOdkaz = odkaz;
-                    return false; // ukončenie slučky
+                    njadenyLink = odkaz;
+                    return false; // ukončí .each slučku
                 }
             });
 
-            // Ak nenašlo podľa roku, zober aspoň prvý možný
-            if (!najdenyOdkaz) {
-                najdenyOdkaz = $('.article-content article header h3 a').first().attr('href');
+            if (!njadenyLink) {
+                // Ako fallback zoberie úplne prvý odkaz
+                njadenyLink = $('.article-content article header h3 a').first().attr('href');
             }
 
-            if (najdenyOdkaz) {
-                const csfdUrl = `https://www.csfd.cz${najdenyOdkaz}`;
-                logSuccess(`Úspešne nájdená ČSFD URL z vyhľadávania: ${csfdUrl}`);
+            if (njadenyLink) {
+                const csfdUrl = njadenyLink.startsWith('http') ? njadenyLink : `https://www.csfd.cz${njadenyLink}`;
+                logSuccess(`Úspešne nájdená ČSFD URL zoznamu: ${csfdUrl}`);
                 return csfdUrl;
             }
 
-            logWarn(`ČSFD nenašlo nič pre: ${nazov}`);
+            logWarn(`ČSFD nenášlo žiadne výsledky pre: ${nazov}`);
             return null;
 
         } catch (error) {
@@ -206,6 +207,7 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
         }
     });
 }
+
 
 
 

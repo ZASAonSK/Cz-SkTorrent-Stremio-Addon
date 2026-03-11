@@ -659,12 +659,9 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     let streamObj = {
         name: `SKT\n${t.category.toUpperCase()}`,
         title: riadkyTitle.join("\n"),
-
         behaviorHints: { 
-            bingeGroup: `skt-${t.id}`
+            bingeGroup: `sktorrent-${kvality.length > 0 ? kvality.join("-").replace(/\s/g, "") : "standard"}`
         },
-
-        
         sktId: t.id, 
         fileName: cistyNazovSuboru,
         infoHash: torrentData.infoHash,

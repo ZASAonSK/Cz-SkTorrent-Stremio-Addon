@@ -11,7 +11,7 @@ const express = require("express");
 const FormData = require("form-data");
 const path = require("path");
 const cors = require("cors"); 
-const { csfd } = require('node-csfd-api'); 
+// const { csfd } = require('node-csfd-api'); 
 
 const PORT = process.env.PORT || 7000; 
 const PUBLIC_URL = "https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io"; 
@@ -140,45 +140,124 @@ async function overitTorboxCache(infoHashes, torboxKey) {
     }
 }
 
-
-
 // ===================================================================
-// ZÍSKANIE ČSFD LINKU CEZ node-csfd-api
+// ZÍSKANIE ČSFD LINKU VLASTNÝM RIEŠENÍM (Axios + Cheerio)
 // ===================================================================
 async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
     return withCache(`csfd_url_v2:${imdbId}`, 86400000, async () => {
-        logApi(`Hľadám ČSFD dáta pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
+        logApi(`Hľadám ČSFD dáta (vlastný scraper) pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
         try {
-            const hladanie = await csfd.search(nazov);
+            const query = encodeURIComponent(nazov);
+            const searchUrl = `https://www.csfd.cz/hledat/?q=${query}`;
             
-            let vsetkyVysledky = [];
-            if (vlastnyTyp === "series" && hladanie.tvSeries) {
-                vsetkyVysledky = hladanie.tvSeries;
-            } else if (vlastnyTyp === "movie" && hladanie.movies) {
-                vsetkyVysledky = hladanie.movies;
-            } else {
-                vsetkyVysledky = [...(hladanie.movies || []), ...(hladanie.tvSeries || [])];
+            // 1. Odošleme požiadavku s prehliadačovými hlavičkami
+            const res = await axios.get(searchUrl, {
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "sk,cs;q=0.9,en-US;q=0.8,en;q=0.7"
+                },
+                timeout: 6000
+            });
+
+            // 2. ČSFD nás niekedy pri presnej zhode okamžite presmeruje na profil filmu/seriálu
+            const finalUrl = res.request?.res?.responseUrl;
+            if (finalUrl && finalUrl.includes("/film/")) {
+                logSuccess(`ČSFD priamo presmerovalo na: ${finalUrl}`);
+                return finalUrl;
             }
 
-            if (vsetkyVysledky.length === 0) {
-                logWarn(`ČSFD nenašlo žiadne ${vlastnyTyp} výsledky pre: ${nazov}`);
+            // 3. Ak sme na stránke s výsledkami hľadania, zanalyzujeme štruktúru cez Cheerio
+            const $ = cheerio.load(res.data);
+            let najdeneVysledky = [];
+
+            $('.article-header').each((i, el) => {
+                const linkElement = $(el).find('a.film-title-name');
+                const urlPath = linkElement.attr('href');
+                const rawInfo = $(el).find('.info').text() || ""; 
+                
+                if (urlPath && urlPath.includes('/film/')) {
+                    // Skúsime nájsť rok v zátvorke, napr. (2009) alebo (seriál) (2010)
+                    const rokMatch = rawInfo.match(/\b(19|20)\d{2}\b/);
+                    const zaznamRok = rokMatch ? parseInt(rokMatch[0]) : null;
+                    
+                    // Rozpoznanie, či ide o seriál
+                    const jeSerial = rawInfo.toLowerCase().includes('seriál') || rawInfo.toLowerCase().includes('série');
+                    
+                    najdeneVysledky.push({
+                        url: urlPath.startsWith("http") ? urlPath : `https://www.csfd.cz${urlPath}`,
+                        rok: zaznamRok,
+                        jeSerial: jeSerial
+                    });
+                }
+            });
+
+            if (najdeneVysledky.length === 0) {
+                logWarn(`Vlastný scraper nenašiel žiadne výsledky pre: ${nazov}`);
                 return null;
             }
 
-            let najdeny = vsetkyVysledky.find(v => v.year === rok || v.year === rok - 1 || v.year === rok + 1);
-            if (!najdeny) najdeny = vsetkyVysledky[0];
+            // 4. Zoradíme a filtrujeme výsledky podľa typu (Filmy vs Seriály)
+            let filtrovane = najdeneVysledky;
+            if (vlastnyTyp === "series") {
+                const serialy = najdeneVysledky.filter(v => v.jeSerial);
+                if (serialy.length > 0) filtrovane = serialy;
+            } else if (vlastnyTyp === "movie") {
+                const filmy = najdeneVysledky.filter(v => !v.jeSerial);
+                if (filmy.length > 0) filtrovane = filmy;
+            }
 
-            let urlPath = najdeny.url;
-            const csfdUrl = urlPath.startsWith("http") ? urlPath : `https://www.csfd.cz${urlPath}`;
-            
-            logSuccess(`Úspešne nájdené ČSFD URL: ${csfdUrl}`);
-            return csfdUrl;
+            // 5. Nájdeme najlepšiu zhodu roka (+/- 1 rok)
+            let najdeny = filtrovane.find(v => v.rok === rok || v.rok === rok - 1 || v.rok === rok + 1);
+            if (!najdeny) najdeny = filtrovane[0]; // Ak sa rok nenašiel, vrátime prvý najlepší výsledok
+
+            logSuccess(`Úspešne nájdené ČSFD URL (vlastný scraper): ${najdeny.url}`);
+            return najdeny.url;
+
         } catch (error) {
-            logError(`Chyba pri získavaní ČSFD URL pre ${nazov}`, error);
+            logError(`Chyba pri vlastnom získavaní ČSFD URL pre ${nazov}`, error);
             return null;
         }
     });
 }
+
+// ===================================================================
+// ZÍSKANIE ČSFD LINKU CEZ node-csfd-api
+// ===================================================================
+// async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
+//     return withCache(`csfd_url_v2:${imdbId}`, 86400000, async () => {
+//         logApi(`Hľadám ČSFD dáta pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
+//         try {
+//             const hladanie = await csfd.search(nazov);
+
+//             let vsetkyVysledky = [];
+//             if (vlastnyTyp === "series" && hladanie.tvSeries) {
+//                 vsetkyVysledky = hladanie.tvSeries;
+//             } else if (vlastnyTyp === "movie" && hladanie.movies) {
+//                 vsetkyVysledky = hladanie.movies;
+//             } else {
+//                 vsetkyVysledky = [...(hladanie.movies || []), ...(hladanie.tvSeries || [])];
+//             }
+
+//             if (vsetkyVysledky.length === 0) {
+//                 logWarn(`ČSFD nenašlo žiadne ${vlastnyTyp} výsledky pre: ${nazov}`);
+//                 return null;
+//             }
+
+//             let najdeny = vsetkyVysledky.find(v => v.year === rok || v.year === rok - 1 || v.year === rok + 1);
+//             if (!najdeny) najdeny = vsetkyVysledky[0];
+
+//             let urlPath = najdeny.url;
+//             const csfdUrl = urlPath.startsWith("http") ? urlPath : `https://www.csfd.cz${urlPath}`;
+
+//             logSuccess(`Úspešne nájdené ČSFD URL: ${csfdUrl}`);
+//             return csfdUrl;
+//         } catch (error) {
+//             logError(`Chyba pri získavaní ČSFD URL pre ${nazov}`, error);
+//             return null;
+//         }
+//     });
+// }
 
 // ===================================================================
 // FILTRE PRE NÁZVY A SERIÁLY

@@ -756,10 +756,11 @@ app.get(['/', '/configure'], (req, res) => {
                 try {
                     var jsonString = JSON.stringify(config);
                     // ZMENENÉ: URL-Safe Base64. Zabraňuje lomítkam rozbiť Stremio/Express routing!
-                    var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)))
-                        .replace(/\+/g, '-')
-                        .replace(/\//g, '_')
-                        .replace(/=+$/, '');
+                        var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)))
+                            .replace(/\\+/g, '-')
+                            .replace(/\\//g, '_')
+                            .replace(/=+$/, '');
+
                         
                     var currentUrl = "${PUBLIC_URL}"; 
                     var finalHttpUrl = currentUrl + '/' + encodedConfig + '/manifest.json';

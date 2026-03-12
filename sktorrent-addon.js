@@ -1,4 +1,4 @@
-// SKTorrent Addon v1.6.0 + TORBOX + ČSFD API + ADVANCED METADATA
+// SKTorrent Addon v1.7.0 + TORBOX + ČSFD
 const { addonBuilder } = require("stremio-addon-sdk");
 const { decode } = require("entities");
 const axios = require("axios");

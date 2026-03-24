@@ -48,7 +48,7 @@ Ak si chceš addon spustiť lokálne alebo upravovať kód:
 
 ```bash
 # Naklonovanie repozitára
-git clone https://github.com/TvojGithub/TvojRepozitar.git
+git clone https://github.com/ZASAonSK/Cz-SkTorrent-Stremio-Addon.git
 cd TvojRepozitar
 
 # Inštalácia závislostí

@@ -344,7 +344,7 @@ function torrentSediSEpizodou(nazov, seria, epizoda) {
     // Explicitná zhoda pre požadovanú epizódu
     if (new RegExp(`S${seriaStr}[._-]?E${epStr}\\b`, "i").test(nazov)) return true;
     if (new RegExp(`\\b${seria}x${epStr}\\b`, "i").test(nazov)) return true;
-
+    if (new RegExp(`\\b0*${epizoda}[._\\s-]*(?:Epiz[oó]da|Diel|Časť|Cast)\\b`, "i").test(nazov)) return true;
     // Rozsahy epizód ako "E01-E10" alebo "Dily 1-10"
     const rozsahEpizod = nazov.match(/E(\d{1,3})\s*[-–]\s*E?(\d{1,3})\b/i) || 
                          nazov.match(/(?:Dily?|Parts?|Epizody?|Eps?|Ep)[._\s]*(\d{1,3})\s*[-–]\s*(\d{1,3})\b/i);
@@ -626,28 +626,32 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         const epStr = String(epCislo).padStart(2, "0");
         const seriaStr = String(seria).padStart(2, "0");
 
-        if (videoSubory.length === 1) {
-            const nazovSuboru = videoSubory[0].path;
-            const najdeneESubor = nazovSuboru.match(new RegExp(`S${seriaStr}[._-]?E(\\d{1,3})\\b`, "i")) || 
-                                  nazovSuboru.match(new RegExp(`\\b${seria}x(\\d{1,3})\\b`, "i")) ||
-                                  nazovSuboru.match(new RegExp(`Ep(?:isode)?[._\\s]*(\\d{1,3})\\b`, "i")) ||
-                                  nazovSuboru.match(new RegExp(`\\bE(\\d{1,3})\\b`, "i"));
-            
-            if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
-            najdenyIndex = videoSubory[0].index;
-            najdenyNazovSuboru = videoSubory[0].path;
-        } else {
-            const epRegexy = [
-                new RegExp(`[\\\\/](?:\\d+\\.\\s*s[eé]rie[\\\\/])?0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
-                new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
-                new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
-                new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
-                new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
-                new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
-                new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
-                new RegExp(`\\bE${epStr}\\b`, "i"),
-                new RegExp(`(?:^|[\\\\/])[\\s._-]*0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
-            ];
+    if (videoSubory.length === 1) {
+        const nazovSuboru = videoSubory[0].path;
+        const najdeneESubor = nazovSuboru.match(new RegExp(`S${seriaStr}[._-]?E(\\\\d{1,3})\\\\b`, "i")) || 
+                              nazovSuboru.match(new RegExp(`\\\\b${seria}x(\\\\d{1,3})\\\\b`, "i")) || 
+                              nazovSuboru.match(new RegExp(`Ep(?:isode)?[._\\\\s]*(\\\\d{1,3})\\\\b`, "i")) || 
+                              // PRIDANÉ PRE SINGLE SÚBORY: Zachytí číslo pred slovom Epizóda
+                              nazovSuboru.match(new RegExp(`\\\\b(\\\\d{1,3})[._\\\\s]*(?:Epiz[oó]da|Diel|Časť|Cast)\\\\b`, "i")) ||
+                              nazovSuboru.match(new RegExp(`\\\\bE(\\\\d{1,3})\\\\b`, "i"));
+        if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
+        najdenyIndex = videoSubory[0].index;
+        najdenyNazovSuboru = videoSubory[0].path;
+    } else {
+        const epRegexy = [
+            new RegExp(`[\\\\\\\\/](?:\\\\d+\\\\.\\\\s*s[eé]rie[\\\\\\\\/])?0*${epCislo}[\\\\s._-][^\\\\\\\\/]*\\\\.(?:mp4|mkv|avi|m4v)$`, "i"),
+            new RegExp(`\\\\bS${seriaStr}[._-]?E${epStr}\\\\b`, "i"),
+            new RegExp(`\\\\b${seria}x${epStr}\\\\b`, "i"),
+            new RegExp(`\\\\b${seriaStr}x${epStr}\\\\b`, "i"),
+            new RegExp(`\\\\b${seria}x0*${epCislo}\\\\b`, "i"),
+            new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
+            new RegExp(`Ep(?:isode)?[._\\\\s]*0*${epCislo}\\\\b`, "i"),
+            // PRIDANÉ PRE PACKY: Presne pre "105.Epizóda", "1.Epizoda" atď.
+            new RegExp(`\\\\b0*${epCislo}[._\\\\s-]*(?:Epiz[oó]da|Diel|Časť|Cast)\\\\b`, "i"),
+            new RegExp(`\\\\bE${epStr}\\\\b`, "i"),
+            new RegExp(`(?:^|[\\\\\\\\/])[\\\\s._-]*0*${epCislo}[\\\\s._-].*\\\\.(?:mp4|mkv|avi|m4v)$`, "i")
+        ];
+
 
             for (let i = 0; i < epRegexy.length; i++) {
                 const reg = epRegexy[i];

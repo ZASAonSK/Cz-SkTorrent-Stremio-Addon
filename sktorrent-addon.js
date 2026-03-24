@@ -626,56 +626,56 @@ async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
         const epStr = String(epCislo).padStart(2, "0");
         const seriaStr = String(seria).padStart(2, "0");
 
-    if (videoSubory.length === 1) {
-        const nazovSuboru = videoSubory[0].path;
-        const najdeneESubor = nazovSuboru.match(new RegExp(`S${seriaStr}[._-]?E(\\\\d{1,3})\\\\b`, "i")) || 
-                              nazovSuboru.match(new RegExp(`\\\\b${seria}x(\\\\d{1,3})\\\\b`, "i")) || 
-                              nazovSuboru.match(new RegExp(`Ep(?:isode)?[._\\\\s]*(\\\\d{1,3})\\\\b`, "i")) || 
-                              // PRIDANÉ PRE SINGLE SÚBORY: Zachytí číslo pred slovom Epizóda
-                              nazovSuboru.match(new RegExp(`\\\\b(\\\\d{1,3})[._\\\\s]*(?:Epiz[oó]da|Diel|Časť|Cast)\\\\b`, "i")) ||
-                              nazovSuboru.match(new RegExp(`\\\\bE(\\\\d{1,3})\\\\b`, "i"));
-        if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
-        najdenyIndex = videoSubory[0].index;
-        najdenyNazovSuboru = videoSubory[0].path;
-    } else {
-        const epRegexy = [
-            new RegExp(`[\\\\\\\\/](?:\\\\d+\\\\.\\\\s*s[eé]rie[\\\\\\\\/])?0*${epCislo}[\\\\s._-][^\\\\\\\\/]*\\\\.(?:mp4|mkv|avi|m4v)$`, "i"),
-            new RegExp(`\\\\bS${seriaStr}[._-]?E${epStr}\\\\b`, "i"),
-            new RegExp(`\\\\b${seria}x${epStr}\\\\b`, "i"),
-            new RegExp(`\\\\b${seriaStr}x${epStr}\\\\b`, "i"),
-            new RegExp(`\\\\b${seria}x0*${epCislo}\\\\b`, "i"),
-            new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
-            new RegExp(`Ep(?:isode)?[._\\\\s]*0*${epCislo}\\\\b`, "i"),
-            // PRIDANÉ PRE PACKY: Presne pre "105.Epizóda", "1.Epizoda" atď.
-            new RegExp(`\\\\b0*${epCislo}[._\\\\s-]*(?:Epiz[oó]da|Diel|Časť|Cast)\\\\b`, "i"),
-            new RegExp(`\\\\bE${epStr}\\\\b`, "i"),
-            new RegExp(`(?:^|[\\\\\\\\/])[\\\\s._-]*0*${epCislo}[\\\\s._-].*\\\\.(?:mp4|mkv|avi|m4v)$`, "i")
-        ];
+if (videoSubory.length === 1) {
+    const nazovSuboru = videoSubory[0].path;
+    const najdeneESubor =
+        nazovSuboru.match(new RegExp(`S${seriaStr}[._-]?E(\\d{1,3})\\b`, "i")) ||
+        nazovSuboru.match(new RegExp(`\\b${seria}x(\\d{1,3})\\b`, "i")) ||
+        nazovSuboru.match(new RegExp(`Ep(?:isode)?[._\\s]*(\\d{1,3})\\b`, "i")) ||
+        nazovSuboru.match(new RegExp(`\\b(\\d{1,3})[._\\s]*(?:Epiz[oó]da|Diel|Časť|Cast)\\b`, "i")) ||
+        nazovSuboru.match(new RegExp(`\\bE(\\d{1,3})\\b`, "i"));
 
+    if (najdeneESubor && parseInt(najdeneESubor[1]) !== epCislo) return null;
 
-            for (let i = 0; i < epRegexy.length; i++) {
-                const reg = epRegexy[i];
-                const zhoda = videoSubory.find(f => reg.test(f.path));
-                if (zhoda) {
-                    najdenyIndex = zhoda.index;
-                    najdenyNazovSuboru = zhoda.path;
-                    break;
-                }
-            }
+    najdenyIndex = videoSubory[0].index;
+    najdenyNazovSuboru = videoSubory[0].path;
+} else {
+    const epRegexy = [
+        new RegExp(`[\\\\/](?:\\d+\\.\\s*s[eé]rie[\\\\/])?0*${epCislo}[\\s._-][^\\\\/]*\\.(?:mp4|mkv|avi|m4v)$`, "i"),
+        new RegExp(`\\bS${seriaStr}[._-]?E${epStr}\\b`, "i"),
+        new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
+        new RegExp(`\\b${seriaStr}x${epStr}\\b`, "i"),
+        new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
+        new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
+        new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
+        new RegExp(`\\b0*${epCislo}[._\\s-]*(?:Epiz[oó]da|Diel|Časť|Cast)\\b`, "i"),
+        new RegExp(`\\bE${epStr}\\b`, "i"),
+        new RegExp(`(?:^|[\\\\/])[\\s._-]*0*${epCislo}[\\s._-].*\\.(?:mp4|mkv|avi|m4v)$`, "i")
+    ];
 
-            if (najdenyIndex === -1) {
-                if (videoSubory.length === 1) {
-                    najdenyIndex = videoSubory[0].index;
-                    najdenyNazovSuboru = videoSubory[0].path;
-                    logWarn(`[TORRENT: ${t.name}] Nenájdená zhoda pre S${seria}E${epizoda}, ale použijem: ${najdenyNazovSuboru}`);
-                } else {
-                    logWarn(`[TORRENT: ${t.name}] VYRADENÝ! Vo vnútri ${videoSubory.length} súborov nebol nájdený žiadny zodpovedajúci S${seria}E${epizoda}.`);
-                    return null; 
-                }
-            } else {
-                logSuccess(`[TORRENT: ${t.name}] ÚSPECH! Pre S${seria}E${epizoda} vybraný súbor: ${najdenyNazovSuboru}`);
-            }
+    for (let i = 0; i < epRegexy.length; i++) {
+        const reg = epRegexy[i];
+        const zhoda = videoSubory.find(f => reg.test(f.path));
+        if (zhoda) {
+            najdenyIndex = zhoda.index;
+            najdenyNazovSuboru = zhoda.path;
+            break;
         }
+    }
+
+    if (najdenyIndex === -1) {
+        if (videoSubory.length === 1) {
+            najdenyIndex = videoSubory[0].index;
+            najdenyNazovSuboru = videoSubory[0].path;
+            logWarn(`[TORRENT: ${t.name}] Nenájdená zhoda pre S${seria}E${epizoda}, ale použijem: ${najdenyNazovSuboru}`);
+        } else {
+            logWarn(`[TORRENT: ${t.name}] VYRADENÝ! Vo vnútri ${videoSubory.length} súborov nebol nájdený žiadny zodpovedajúci S${seria}E${epizoda}.`);
+            return null;
+        }
+    } else {
+        logSuccess(`[TORRENT: ${t.name}] ÚSPECH! Pre S${seria}E${epizoda} vybraný súbor: ${najdenyNazovSuboru}`);
+    }
+}
     }
 
     // --- FORMÁTOVANIE METADÁT PRE TITLE ---

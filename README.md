@@ -33,7 +33,7 @@ Aby addon fungoval, potrebuješ mať účet na SKTorrent.eu. Addon pre svoju fun
 **Postup pre Chrome/Edge/Firefox:**
 1. Otvor si stránku [sktorrent.eu](https://sktorrent.eu) a prihlás sa.
 2. Stlač klávesu `F12` (otvoria sa Vývojárske nástroje / Developer Tools).
-3. Choď do záložky **Application** (Aplikácia) -> vľavo v menu rozbaľ **Cookies** a klikni na `https://sktorrent.eu`.
+3. Choď do záložky **Application** (Aplikácia) / **Storage** (Uložisko) -> vľavo v menu rozbaľ **Cookies** a klikni na `https://sktorrent.eu`.
 4. V tabuľke nájdi riadok s názvom `uid` a skopíruj si jeho hodnotu (napr. `123456`).
 5. Nájdi riadok s názvom `pass` a skopíruj si jeho hodnotu (dlhý alfanumerický reťazec).
 6. Tieto dva údaje vlož do konfiguračného okna na jednej z webových inštancií vyššie a vygeneruj si inštalačný odkaz.

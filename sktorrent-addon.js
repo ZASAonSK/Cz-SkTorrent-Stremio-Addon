@@ -477,7 +477,7 @@ async function hladatTorrenty(dotaz, userAxios, maxPages = 1) {
     
     // Ak hľadáme cez exaktný ČSFD link, chceme načítať viac stránok 
     // (napr. až 4), pretože seriály môžu mať desiatky epizód zoradených od najnovších.
-    const skutocneMaxPages = dotaz.includes("csfd.cz") ? 4 : maxPages;
+    const skutocneMaxPages = dotaz.includes("csfd.cz") ? 20 : maxPages;
     
     return withCache(`search_paged_${skutocneMaxPages}:${dotaz}`, 600000, async () => {
         logApi(`Searching SKTorrent for: "${dotaz}" (Max pages: ${skutocneMaxPages})`);

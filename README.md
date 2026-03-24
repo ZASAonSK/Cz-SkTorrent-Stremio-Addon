@@ -22,7 +22,6 @@ Addon si môžeš nainštalovať a nakonfigurovať na jednej z týchto verejne b
     *   **Kvalita & Formát:** 4K, 1080p, HDR, Dolby Vision, HEVC, H.264, Atmos...
     *   **Jazyk (Vlajky):** 🇸🇰 🇨🇿 🇬🇧 🇺🇸 na základe analýzy názvu.
     *   **Veľkosť:** Skutočná veľkosť daného video súboru + veľkosť celého torrentu.
-*   📺 **Podpora Binge-watchingu**: Súbory sú automaticky zoskupované podľa rozlíšenia, takže Stremio ti pri seriáloch plynulo pustí ďalšiu epizódu v rovnakej kvalite.
 *   🌐 **TMDB a Cinemeta integrácia**: Hľadá podľa pôvodného aj preloženého (českého/slovenského) názvu pre maximálnu presnosť výsledkov.
 
 ---
@@ -59,5 +58,6 @@ npm install
 npm start
 
 Server štandardne pobeží na porte 7000. Konfiguračnú stránku nájdeš na http://localhost:7000/.
-
+```` ``` ````
 ⚠️ Upozornenie: Tento addon slúži len na technické, vzdelávacie a vyhľadávacie účely. Addon neobsahuje žiadne mediálne súbory, len spracováva a formátuje metadáta dostupné na internete na základe požiadavky používateľa.
+

@@ -725,16 +725,37 @@ if (videoSubory.length === 1) {
         jazykText = textoveJazyky.join(" / ");
     }
 
-    const riadkyTitle = [cistyNazov];
+    // Získanie počtu seedov (t.seeds je dostupné z tvojho vyhľadávacieho scrapera)
+    const seedersText = t.seeds !== undefined ? `👥 Seeders: ${t.seeds}` : "👥 N/A";
+
+    // Vytvorenie lepšie usporiadaného zoznamu
+    const riadkyTitle = [];
+
+    // Riadok 1: Skutočný Názov (CZ/EN) + Rok (čistý rok v zátvorke pre krajší dizajn)
+    if (titleLine) {
+        let rokCisty = rokText.replace("📅 ", ""); // Odstránime ikonu, nech to vyzerá filmovejšie
+        riadkyTitle.push(`${titleLine} ${rokCisty !== "N/A" ? `(${rokCisty})` : ""}`);
+    }
+
+    // Riadok 2: TV Info (Séria a Epizóda) - zobrazí sa iba pri seriáloch
+    if (seriaEpizodaText) {
+        riadkyTitle.push(seriaEpizodaText);
+    }
+
+    // Riadok 3: Vlastnosti streamu (Jazyk a Kvalita oddelené čiarou)
+    riadkyTitle.push(`🔊 ${jazykText}   |   ${kvalitaText}`);
+
+    // Riadok 4: Technické info (Veľkosť a počet Seedov)
+    riadkyTitle.push(`${velkostText}   |   ${seedersText}`);
+
+    // Riadok 5: Konkrétny nájdený súbor, ktorý sa ide prehrať (Ak sa našiel v packu)
     if (najdenyNazovSuboru) {
         const ibaNazovSuboru = najdenyNazovSuboru.split('/').pop().split('\\').pop();
         riadkyTitle.push(`📄 Súbor: ${ibaNazovSuboru}`);
     }
-    riadkyTitle.push(titleLine, rokText);
-    if (seriaEpizodaText) riadkyTitle.push(seriaEpizodaText);
-    riadkyTitle.push(kvalitaText);
-    riadkyTitle.push(velkostText);
-    riadkyTitle.push(`🔊 Jazyk: ${jazykText}`);
+
+    // Riadok 6: Originálny názov Torrent / Pack názov (na konci, lebo býva najdlhší a najviac "škaredý")
+    riadkyTitle.push(`🗂️ Torrent: ${cistyNazov}`);
 
     // -- OŠETRENIE BEZPEČNEJ VEĽKOSTI --
     const bezpecnaVelkost = (fileSize && fileSize > 0) ? fileSize : 1048576; 

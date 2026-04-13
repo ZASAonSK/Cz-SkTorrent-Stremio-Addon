@@ -264,26 +264,36 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
 // FILTRE PRE NÁZVY A SERIÁLY
 // ===================================================================
 function torrentSedisSeriou(nazovTorrentu, seria) {
-    // 1. Zistíme, či ide o rozsah sérií (vrátane CZ/SK zápisov ako "1. - 4. serie").
-    // Ak je to rozsah, necháme ho zatiaľ prejsť (overí sa presnejšie v torrentSediSEpizodou).
+    // 1. Zistíme, či ide o rozsah sérií (vrátane zápisov ako "1. - 4. serie").
+    // Ak je to rozsah (napr. S01-S03), necháme ho prejsť.
     if (
         /S\d{1,2}\s*[-–]\s*S?\d{1,2}/i.test(nazovTorrentu) || 
         /Seasons?\s*\d{1,2}\s*[-–]\s*\d{1,2}/i.test(nazovTorrentu) ||
-        /\b\d{1,2}\.?\s*[-–]\s*\d{1,2}\.?\s*s[eé]rie/i.test(nazovTorrentu)
+        /\b\d{1,2}\.?\s*[-–]\s*\d{1,2}\.?\s*s[eé]rie/i.test(nazovTorrentu) ||
+        /\bs[eé]ri[ae]\s*\d{1,2}\s*[-–]\s*\d{1,2}\b/i.test(nazovTorrentu)
     ) {
         return true; 
     }
 
     // 2. Kontrola, či to nie je EXPLICITNE INÁ samostatná séria 
-    // Opravený regex pre CZ/SK (berie ohľad na medzeru, napr. "4. serie", "4.serie")
     const serieMatch = nazovTorrentu.match(/\b(\d+)\.\s*s[eé]rie/i);
-    if (serieMatch && parseInt(serieMatch[1]) !== seria) return false;
+    if (serieMatch && parseInt(serieMatch[1], 10) !== seria) return false;
 
     const seasonMatch = nazovTorrentu.match(/\bSeason\s+(\d+)\b/i);
-    if (seasonMatch && parseInt(seasonMatch[1]) !== seria) return false;
+    if (seasonMatch && parseInt(seasonMatch[1], 10) !== seria) return false;
 
+    // --- PRIDANÁ OPRAVA: Kontrola presného formátu SxxEyy ---
+    // Ak torrent jasne hovorí, že ide napr. o S01E10, a my hľadáme Sériu 3, okamžite ho vyradíme
+    const seMatch = nazovTorrentu.match(/\bS(\d{1,2})[._-]?E\d{1,3}\b/i);
+    if (seMatch && parseInt(seMatch[1], 10) !== seria) return false;
+
+    // --- PRIDANÁ OPRAVA: Kontrola formátu 1x01 ---
+    const xMatch = nazovTorrentu.match(/\b(\d{1,2})x\d{1,3}\b/i);
+    if (xMatch && parseInt(xMatch[1], 10) !== seria) return false;
+
+    // Kontrola pre osamotené Sxx (napríklad S01, ale ignoruje, ak nasleduje E)
     const sMatch = nazovTorrentu.match(/\bS(\d{2})(?!E)/i);
-    if (sMatch && parseInt(sMatch[1]) !== seria) return false;
+    if (sMatch && parseInt(sMatch[1], 10) !== seria) return false;
 
     return true;
 }

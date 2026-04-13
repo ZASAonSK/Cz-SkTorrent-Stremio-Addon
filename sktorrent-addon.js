@@ -725,7 +725,12 @@ if (videoSubory.length === 1) {
         jazykText = textoveJazyky.join(" / ");
     }
 
-    const riadkyTitle = [cistyNazov, titleLine, rokText];
+    const riadkyTitle = [cistyNazov];
+    if (najdenyNazovSuboru) {
+        const ibaNazovSuboru = najdenyNazovSuboru.split('/').pop().split('\\').pop();
+        riadkyTitle.push(`📄 Súbor: ${ibaNazovSuboru}`);
+    }
+    riadkyTitle.push(titleLine, rokText);
     if (seriaEpizodaText) riadkyTitle.push(seriaEpizodaText);
     riadkyTitle.push(kvalitaText);
     riadkyTitle.push(velkostText);

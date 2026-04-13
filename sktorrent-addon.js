@@ -676,7 +676,25 @@ if (videoSubory.length === 1) {
         logSuccess(`[TORRENT: ${t.name}] ÚSPECH! Pre S${seria}E${epizoda} vybraný súbor: ${najdenyNazovSuboru}`);
     }
 }
+     } else {
+        // --- VYHĽADANIE SÚBORU PRE FILMY ---
+        // Vyfiltrujeme video súbory a zoradíme ich podľa veľkosti zostupne (najväčší bude prvý)
+        const videoSubory = torrentData.files
+            .filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.path))
+            .sort((a, b) => (b.length || 0) - (a.length || 0));
+
+        if (videoSubory.length > 0) {
+            // Pre film vyberieme ten úplne najväčší video súbor (vyhneme sa tým "Sample" videám)
+            najdenyIndex = videoSubory[0].index;
+            najdenyNazovSuboru = videoSubory[0].path;
+        } else if (torrentData.files.length > 0) {
+            // Záloha: ak torrent nemá štandardnú video koncovku, zoberieme jednoducho najväčší súbor v torrente
+            const najvacsiSubor = [...torrentData.files].sort((a, b) => (b.length || 0) - (a.length || 0))[0];
+            najdenyIndex = najvacsiSubor.index;
+            najdenyNazovSuboru = najvacsiSubor.path;
+        }
     }
+    
 
     // --- FORMÁTOVANIE METADÁT PRE TITLE ---
     const titleOriginalText = meta?.titleOriginal ? `${meta.titleOriginal}` : "";

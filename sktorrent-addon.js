@@ -274,7 +274,6 @@ function torrentSedisSeriou(nazovTorrentu, seria) {
     ) {
         return true; 
     }
-
     // 2. Kontrola, či to nie je EXPLICITNE INÁ samostatná séria 
     const serieMatch = nazovTorrentu.match(/\b(\d+)\.\s*s[eé]rie/i);
     if (serieMatch && parseInt(serieMatch[1], 10) !== seria) return false;

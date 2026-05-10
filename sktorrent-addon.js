@@ -872,7 +872,7 @@ app.get(['/', '/configure'], (req, res) => {
             <h3 style="text-align: center; color: #aaa; margin-bottom: 5px;">Nastavenia zobrazenia</h3>
 
             <label class="checkbox-label">
-                <input type="checkbox" id="showUncached" checked> Zobraziť nenastiahnuté (Uncached ⏳)
+                <input type="checkbox" id="showUncached" checked> Zobraziť nestiahnuté (Uncached ⏳)
             </label>
 
             <label>Zoradenie podľa veľkosti:</label>

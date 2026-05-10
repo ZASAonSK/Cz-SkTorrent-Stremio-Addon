@@ -943,7 +943,7 @@ const handleManifest = (req, res) => {
 
     res.json({
         id: "org.stremio.skcztorrent.addon", 
-        version: "1.7.0",
+        version: "2.0.0",
         name: "SKTorrent + TorBox (Multi-User)",
         description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
         types: ["movie", "series"],

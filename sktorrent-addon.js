@@ -967,7 +967,7 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
                         .replace(/\\\\//g, '_')
                         .replace(/=+$/, '');
                         
-                    var currentUrl = "${PUBLIC_URL}"; 
+                    var currentUrl = window.location.origin;
                     var finalHttpUrl = currentUrl + '/' + encodedConfig + '/manifest.json';
                     
                     document.getElementById('result-box').style.display = 'block';

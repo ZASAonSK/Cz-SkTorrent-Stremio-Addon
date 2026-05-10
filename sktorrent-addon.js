@@ -834,7 +834,9 @@ app.get(['/', '/configure'], (req, res) => {
             .container { background: #222; padding: 30px; border-radius: 8px; width: 100%; max-width: 450px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
             h2 { text-align: center; color: #8A5A9E; margin-bottom: 5px; }
             label { display: block; margin-top: 15px; font-size: 14px; font-weight: bold; }
-            input { width: 100%; padding: 10px; margin-top: 5px; background: #333; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;}
+            input, select { width: 100%; padding: 10px; margin-top: 5px; background: #333; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;}
+            .inline-selects { display: flex; justify-content: space-between; gap: 10px; margin-top: 5px;}
+            .inline-selects select { width: 22%; text-align: center; }
             button { width: 100%; padding: 12px; margin-top: 25px; background: #8A5A9E; color: white; border: none; font-size: 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
             button:hover { background: #6b467a; }
             
@@ -844,6 +846,9 @@ app.get(['/', '/configure'], (req, res) => {
             .copy-btn:hover { background: #555; }
             .install-btn { background: #28a745; margin-top: 10px; }
             .install-btn:hover { background: #218838; }
+            
+            .checkbox-label { display: flex; align-items: center; font-weight: normal; margin-top: 15px; }
+            .checkbox-label input { width: auto; margin-right: 10px; margin-top: 0;}
         </style>
     </head>
     <body>
@@ -863,6 +868,27 @@ app.get(['/', '/configure'], (req, res) => {
             <label>TMDB API Key (Voliteľné)</label>
             <input type="text" id="tmdb" placeholder="TMDB token">
             
+            <hr style="border: 1px solid #444; margin-top: 20px;">
+            <h3 style="text-align: center; color: #aaa; margin-bottom: 5px;">Nastavenia zobrazenia</h3>
+
+            <label class="checkbox-label">
+                <input type="checkbox" id="showUncached" checked> Zobraziť nenastiahnuté (Uncached ⏳)
+            </label>
+
+            <label>Zoradenie podľa veľkosti:</label>
+            <select id="sizeOrder">
+                <option value="desc" selected>Najväčšie prvé (Odporúčané)</option>
+                <option value="asc">Najmenšie prvé</option>
+            </select>
+
+            <label>Priorita kvality (1. až 4.):</label>
+            <div class="inline-selects">
+                <select class="q-order"><option value="4" selected>4K</option><option value="3">1080</option><option value="2">720</option><option value="1">SD</option></select>
+                <select class="q-order"><option value="4">4K</option><option value="3" selected>1080</option><option value="2">720</option><option value="1">SD</option></select>
+                <select class="q-order"><option value="4">4K</option><option value="3">1080</option><option value="2" selected>720</option><option value="1">SD</option></select>
+                <select class="q-order"><option value="4">4K</option><option value="3">1080</option><option value="2">720</option><option value="1" selected>SD</option></select>
+            </div>
+
             <button onclick="generateLink()">Vygenerovať odkaz</button>
 
             <div id="result-box">
@@ -876,15 +902,27 @@ app.get(['/', '/configure'], (req, res) => {
 
         <script>
             function generateLink() {
+                var qSelects = document.querySelectorAll('.q-order');
+                var qArray = [];
+                qSelects.forEach(function(sel) { qArray.push(parseInt(sel.value)); });
+                qArray.push(0); 
+
+                var uniqueQArray = [];
+                qArray.forEach(function(item) {
+                    if(uniqueQArray.indexOf(item) === -1) uniqueQArray.push(item);
+                });
+
                 var config = {
                     uid: document.getElementById('uid').value,
                     pass: document.getElementById('pass').value,
                     torbox: document.getElementById('torbox').value,
                     tmdb: document.getElementById('tmdb').value,
-                    cb: Date.now() // CACHE BUSTER - oklame Stremio ze ide o novy addon
+                    showUncached: document.getElementById('showUncached').checked,
+                    sizeOrder: document.getElementById('sizeOrder').value,
+                    qualityOrder: uniqueQArray,
+                    cb: Date.now()
                 };
 
-                
                 if(!config.uid || !config.pass) {
                     alert('Prosím, vyplň aspoň UID a Heslo pre SKTorrent.'); 
                     return;
@@ -892,12 +930,11 @@ app.get(['/', '/configure'], (req, res) => {
                 
                 try {
                     var jsonString = JSON.stringify(config);
-                    // ZMENENÉ: URL-Safe Base64. Zabraňuje lomítkam rozbiť Stremio/Express routing!
-                        var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)))
-                            .replace(/\\+/g, '-')
-                            .replace(/\\//g, '_')
-                            .replace(/=+$/, '');
-
+                    // Tvoj funkčný kód s dvojitými lomkami
+                    var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)))
+                        .replace(/\\\\+/g, '-')
+                        .replace(/\\\\//g, '_')
+                        .replace(/=+$/, '');
                         
                     var currentUrl = "${PUBLIC_URL}"; 
                     var finalHttpUrl = currentUrl + '/' + encodedConfig + '/manifest.json';
@@ -908,7 +945,6 @@ app.get(['/', '/configure'], (req, res) => {
                     alert('Chyba pri generovaní kódu.');
                     console.error(error);
                 }
-
             }
 
             function copyUrl() {
@@ -922,7 +958,8 @@ app.get(['/', '/configure'], (req, res) => {
 
             function openStremio() {
                 var httpUrl = document.getElementById('generated-url').value;
-                var stremioUrl = httpUrl.replace(/^https?:\\/\\//i, 'stremio://');
+                // Tvoj funkčný kód s dvojitými lomkami
+                var stremioUrl = httpUrl.replace(/^https?:\\\\/\\\\//i, 'stremio://');
                 window.location.assign(stremioUrl);
             }
         </script>
@@ -943,7 +980,7 @@ const handleManifest = (req, res) => {
 
     res.json({
         id: "org.stremio.skcztorrent.addon", 
-        version: "2.0.0",
+        version: "1.7.0",
         name: "SKTorrent + TorBox (Multi-User)",
         description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
         types: ["movie", "series"],
@@ -1128,7 +1165,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         torrenty.map(t => execLimit(() => vytvoritStream(t, seria, epizoda, userAxios, metaInfo, userConfig)))
     )).filter(Boolean);
 
-    if (userConfig.torbox && streamy.length > 0) {
+        if (userConfig.torbox && streamy.length > 0) {
         logInfo("TorBox enabled. Preparing streams for TorBox playback...");
         const hasheKONTROLA = streamy.map(s => s.infoHash).filter(Boolean); 
         const torboxCache = await overitTorboxCache(hasheKONTROLA, userConfig.torbox);
@@ -1183,13 +1220,35 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             return finalStream;
         });
 
+        const showUncached = userConfig.showUncached !== undefined ? userConfig.showUncached : true;
+        if (!showUncached) {
+            streamy = streamy.filter(s => s._sortCached === 1);
+        }
+
+        const sizeOrder = userConfig.sizeOrder || "desc"; 
+        const defaultQualityOrder = [4, 3, 2, 1, 0];
+        const qualityOrder = userConfig.qualityOrder || defaultQualityOrder;
+
         streamy = streamy.sort((a, b) => {
-            return (
-                b._sortCached - a._sortCached || 
-                b._sortQuality - a._sortQuality || 
-                b._sortSize - a._sortSize ||
-                (a.title || "").localeCompare(b.title || "", undefined, { numeric: true, sensitivity: "base" })
-            );
+            if (b._sortCached !== a._sortCached) {
+                return b._sortCached - a._sortCached;
+            }
+
+            const indexA = qualityOrder.indexOf(a._sortQuality);
+            const indexB = qualityOrder.indexOf(b._sortQuality);
+            
+            const rankA = indexA === -1 ? 99 : indexA;
+            const rankB = indexB === -1 ? 99 : indexB;
+
+            if (rankA !== rankB) {
+                return rankA - rankB;
+            }
+
+            if (sizeOrder === "asc") {
+                return a._sortSize - b._sortSize;
+            } else {
+                return b._sortSize - a._sortSize;
+            }
         });
 
         streamy = streamy.map(({ _sortCached, _sortQuality, _sortSize, ...rest }) => rest);

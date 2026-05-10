@@ -821,7 +821,38 @@ app.use((req, res, next) => {
 });
 
 // --- Web UI ---
-app.get(['/', '/configure'], (req, res) => {
+app.get(['/', '/configure', '/:config/configure'], (req, res) => {
+    
+    // Zistíme, či používateľ prišiel cez už existujúcu konfiguráciu
+    let currentConfig = {};
+    if (req.params.config) {
+        currentConfig = decodeConfig(req.params.config) || {};
+    }
+
+    // Bezpečné funkcie pre zobrazenie v HTML
+    const getVal = (key) => currentConfig[key] ? currentConfig[key] : '';
+    const getCheck = (key, defaultVal) => {
+        if (currentConfig[key] !== undefined) return currentConfig[key] ? 'checked' : '';
+        return defaultVal ? 'checked' : '';
+    };
+    const getSelect = (key, val, defaultVal) => {
+        if (currentConfig[key] !== undefined) return currentConfig[key] === val ? 'selected' : '';
+        return val === defaultVal ? 'selected' : '';
+    };
+
+    // Pomocná funkcia pre zoradenie kvality
+    const getQualityVal = (index, defaultVal) => {
+        if (currentConfig.qualityOrder && currentConfig.qualityOrder[index] !== undefined) {
+            return currentConfig.qualityOrder[index];
+        }
+        return defaultVal;
+    };
+
+    const q1 = getQualityVal(0, 4);
+    const q2 = getQualityVal(1, 3);
+    const q3 = getQualityVal(2, 2);
+    const q4 = getQualityVal(3, 1);
+
     const html = `
     <!DOCTYPE html>
     <html lang="sk">

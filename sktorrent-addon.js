@@ -888,36 +888,36 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
             <p style="text-align:center; font-size:13px; color:#aaa;">Vyplň svoje údaje na vygenerovanie inštalačného odkazu.</p>
             
             <label>SKTorrent UID (Cookie s názvom uid)</label>
-            <input type="text" id="uid" placeholder="Napr. 123987" required>
+            <input type="text" id="uid" placeholder="Napr. 123987" value="${getVal('uid')}" required>
             
             <label>SKTorrent pass (Tiež z cookies s názvom pass)</label>
-            <input type="password" id="pass" placeholder="Tvoj pass" required>
+            <input type="password" id="pass" placeholder="Tvoj pass" value="${getVal('pass')}" required>
             
             <label>TorBox API Key (Odporúčané)</label>
-            <input type="text" id="torbox" placeholder="TorBox token">
+            <input type="text" id="torbox" placeholder="TorBox token" value="${getVal('torbox')}">
             
             <label>TMDB API Key (Voliteľné)</label>
-            <input type="text" id="tmdb" placeholder="TMDB token">
+            <input type="text" id="tmdb" placeholder="TMDB token" value="${getVal('tmdb')}">
             
             <hr style="border: 1px solid #444; margin-top: 20px;">
             <h3 style="text-align: center; color: #aaa; margin-bottom: 5px;">Nastavenia zobrazenia</h3>
 
             <label class="checkbox-label">
-                <input type="checkbox" id="showUncached" checked> Zobraziť nestiahnuté (Uncached ⏳)
+                <input type="checkbox" id="showUncached" ${getCheck('showUncached', true)}> Zobraziť nenastiahnuté (Uncached ⏳)
             </label>
 
             <label>Zoradenie podľa veľkosti:</label>
             <select id="sizeOrder">
-                <option value="desc" selected>Najväčšie prvé (Odporúčané)</option>
-                <option value="asc">Najmenšie prvé</option>
+                <option value="desc" ${getSelect('sizeOrder', 'desc', 'desc')}>Najväčšie prvé (Odporúčané)</option>
+                <option value="asc" ${getSelect('sizeOrder', 'asc', 'desc')}>Najmenšie prvé</option>
             </select>
 
             <label>Priorita kvality (1. až 4.):</label>
             <div class="inline-selects">
-                <select class="q-order"><option value="4" selected>4K</option><option value="3">1080</option><option value="2">720</option><option value="1">SD</option></select>
-                <select class="q-order"><option value="4">4K</option><option value="3" selected>1080</option><option value="2">720</option><option value="1">SD</option></select>
-                <select class="q-order"><option value="4">4K</option><option value="3">1080</option><option value="2" selected>720</option><option value="1">SD</option></select>
-                <select class="q-order"><option value="4">4K</option><option value="3">1080</option><option value="2">720</option><option value="1" selected>SD</option></select>
+                <select class="q-order"><option value="4" ${q1 === 4 ? 'selected':''}>4K</option><option value="3" ${q1 === 3 ? 'selected':''}>1080</option><option value="2" ${q1 === 2 ? 'selected':''}>720</option><option value="1" ${q1 === 1 ? 'selected':''}>SD</option></select>
+                <select class="q-order"><option value="4" ${q2 === 4 ? 'selected':''}>4K</option><option value="3" ${q2 === 3 ? 'selected':''}>1080</option><option value="2" ${q2 === 2 ? 'selected':''}>720</option><option value="1" ${q2 === 1 ? 'selected':''}>SD</option></select>
+                <select class="q-order"><option value="4" ${q3 === 4 ? 'selected':''}>4K</option><option value="3" ${q3 === 3 ? 'selected':''}>1080</option><option value="2" ${q3 === 2 ? 'selected':''}>720</option><option value="1" ${q3 === 1 ? 'selected':''}>SD</option></select>
+                <select class="q-order"><option value="4" ${q4 === 4 ? 'selected':''}>4K</option><option value="3" ${q4 === 3 ? 'selected':''}>1080</option><option value="2" ${q4 === 2 ? 'selected':''}>720</option><option value="1" ${q4 === 1 ? 'selected':''}>SD</option></select>
             </div>
 
             <button onclick="generateLink()">Vygenerovať odkaz</button>

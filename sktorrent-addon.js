@@ -823,13 +823,15 @@ app.use((req, res, next) => {
 // --- Web UI ---
 app.get(['/', '/configure', '/:config/configure'], (req, res) => {
     
-    // Zistíme, či používateľ prišiel cez už existujúcu konfiguráciu
     let currentConfig = {};
     if (req.params.config) {
-        currentConfig = decodeConfig(req.params.config) || {};
+        try {
+            currentConfig = decodeConfig(req.params.config) || {};
+        } catch (e) {
+            console.error("Chyba pri dekódovaní configu:", e);
+        }
     }
 
-    // Bezpečné funkcie pre zobrazenie v HTML
     const getVal = (key) => currentConfig[key] ? currentConfig[key] : '';
     const getCheck = (key, defaultVal) => {
         if (currentConfig[key] !== undefined) return currentConfig[key] ? 'checked' : '';
@@ -840,7 +842,6 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
         return val === defaultVal ? 'selected' : '';
     };
 
-    // Pomocná funkcia pre zoradenie kvality
     const getQualityVal = (index, defaultVal) => {
         if (currentConfig.qualityOrder && currentConfig.qualityOrder[index] !== undefined) {
             return currentConfig.qualityOrder[index];
@@ -914,10 +915,10 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
 
             <label>Priorita kvality (1. až 4.):</label>
             <div class="inline-selects">
-                <select class="q-order"><option value="4" ${q1 === 4 ? 'selected':''}>4K</option><option value="3" ${q1 === 3 ? 'selected':''}>1080</option><option value="2" ${q1 === 2 ? 'selected':''}>720</option><option value="1" ${q1 === 1 ? 'selected':''}>SD</option></select>
-                <select class="q-order"><option value="4" ${q2 === 4 ? 'selected':''}>4K</option><option value="3" ${q2 === 3 ? 'selected':''}>1080</option><option value="2" ${q2 === 2 ? 'selected':''}>720</option><option value="1" ${q2 === 1 ? 'selected':''}>SD</option></select>
-                <select class="q-order"><option value="4" ${q3 === 4 ? 'selected':''}>4K</option><option value="3" ${q3 === 3 ? 'selected':''}>1080</option><option value="2" ${q3 === 2 ? 'selected':''}>720</option><option value="1" ${q3 === 1 ? 'selected':''}>SD</option></select>
-                <select class="q-order"><option value="4" ${q4 === 4 ? 'selected':''}>4K</option><option value="3" ${q4 === 3 ? 'selected':''}>1080</option><option value="2" ${q4 === 2 ? 'selected':''}>720</option><option value="1" ${q4 === 1 ? 'selected':''}>SD</option></select>
+                <select class="q-order"><option value="4" ${q1 === 4 ? 'selected':''}>4K</option><option value="3" ${q1 === 3 ? 'selected':''}>1080p</option><option value="2" ${q1 === 2 ? 'selected':''}>720p</option><option value="1" ${q1 === 1 ? 'selected':''}>SD</option></select>
+                <select class="q-order"><option value="4" ${q2 === 4 ? 'selected':''}>4K</option><option value="3" ${q2 === 3 ? 'selected':''}>1080p</option><option value="2" ${q2 === 2 ? 'selected':''}>720p</option><option value="1" ${q2 === 1 ? 'selected':''}>SD</option></select>
+                <select class="q-order"><option value="4" ${q3 === 4 ? 'selected':''}>4K</option><option value="3" ${q3 === 3 ? 'selected':''}>1080p</option><option value="2" ${q3 === 2 ? 'selected':''}>720p</option><option value="1" ${q3 === 1 ? 'selected':''}>SD</option></select>
+                <select class="q-order"><option value="4" ${q4 === 4 ? 'selected':''}>4K</option><option value="3" ${q4 === 3 ? 'selected':''}>1080p</option><option value="2" ${q4 === 2 ? 'selected':''}>720p</option><option value="1" ${q4 === 1 ? 'selected':''}>SD</option></select>
             </div>
 
             <button onclick="generateLink()">Vygenerovať odkaz</button>
@@ -935,13 +936,17 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
             function generateLink() {
                 var qSelects = document.querySelectorAll('.q-order');
                 var qArray = [];
-                qSelects.forEach(function(sel) { qArray.push(parseInt(sel.value)); });
+                for(var i = 0; i < qSelects.length; i++) {
+                    qArray.push(parseInt(qSelects[i].value));
+                }
                 qArray.push(0); 
 
                 var uniqueQArray = [];
-                qArray.forEach(function(item) {
-                    if(uniqueQArray.indexOf(item) === -1) uniqueQArray.push(item);
-                });
+                for(var j = 0; j < qArray.length; j++) {
+                    if(uniqueQArray.indexOf(qArray[j]) === -1) {
+                        uniqueQArray.push(qArray[j]);
+                    }
+                }
 
                 var config = {
                     uid: document.getElementById('uid').value,
@@ -961,14 +966,17 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
                 
                 try {
                     var jsonString = JSON.stringify(config);
-                    // Tvoj funkčný kód s dvojitými lomkami
                     var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)))
-                        .replace(/\\\\+/g, '-')
-                        .replace(/\\\\//g, '_')
-                        .replace(/=+$/, '');
+                        .split('+').join('-')
+                        .split('/').join('_')
+                        .split('=').join('');
                         
-                    var currentUrl = window.location.origin;
-                    var finalHttpUrl = currentUrl + '/' + encodedConfig + '/manifest.json';
+                    var baseUrl = window.location.origin;
+                    if (!baseUrl || baseUrl === "null") {
+                        baseUrl = window.location.protocol + "//" + window.location.host;
+                    }
+                    
+                    var finalHttpUrl = baseUrl + '/' + encodedConfig + '/manifest.json';
                     
                     document.getElementById('result-box').style.display = 'block';
                     document.getElementById('generated-url').value = finalHttpUrl;
@@ -989,8 +997,7 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
 
             function openStremio() {
                 var httpUrl = document.getElementById('generated-url').value;
-                // Tvoj funkčný kód s dvojitými lomkami
-                var stremioUrl = httpUrl.replace(/^https?:\\\\/\\\\//i, 'stremio://');
+                var stremioUrl = httpUrl.replace("https://", "stremio://").replace("http://", "stremio://");
                 window.location.assign(stremioUrl);
             }
         </script>

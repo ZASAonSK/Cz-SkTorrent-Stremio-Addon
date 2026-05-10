@@ -1132,6 +1132,27 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         logInfo("TorBox enabled. Preparing streams for TorBox playback...");
         const hasheKONTROLA = streamy.map(s => s.infoHash).filter(Boolean); 
         const torboxCache = await overitTorboxCache(hasheKONTROLA, userConfig.torbox);
+
+        function getQualityRank(text = "") {
+            const t = text.toLowerCase();
+            if (t.includes("2160p") || t.includes("4k") || t.includes("uhd")) return 4;
+            if (t.includes("1080p") || t.includes("fhd")) return 3;
+            if (t.includes("720p") || /\bhd\b/.test(t)) return 2;
+            if (t.includes("480p")) return 1;
+            return 0;
+        }
+
+        function getSizeBytes(text = "") {
+            const m = text.match(/(\d+(?:[.,]\d+)?)\s*(tb|gb|mb|kb)\b/i);
+            if (!m) return 0;
+            const value = parseFloat(m[1].replace(",", "."));
+            const unit = m[2].toLowerCase();
+            if (unit === "tb") return value * 1024 * 1024 * 1024 * 1024;
+            if (unit === "gb") return value * 1024 * 1024 * 1024;
+            if (unit === "mb") return value * 1024 * 1024;
+            if (unit === "kb") return value * 1024;
+            return 0;
+        }
         
         streamy = streamy.map(stream => {
             const hash = stream.infoHash.toLowerCase();
@@ -1140,13 +1161,18 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             const proxySeria = seria || 0;
             const proxyEpizoda = epizoda || 0;
             
+            const sortText = `${staraKategoria} ${stream.title || ""}`;
+            
             let finalStream = {
                 name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
                 title: stream.title,
                 type: vlastnyTyp,
-                behaviorHints: stream.behaviorHints
-            };
+                behaviorHints: stream.behaviorHints,
 
+                _sortCached: jeCached ? 1 : 0,
+                _sortQuality: getQualityRank(sortText),
+                _sortSize: getSizeBytes(sortText)
+            };
 
             if (jeCached) {
                 const safeName = (stream.fileName || "video.mkv").split('/').join('|');
@@ -1156,11 +1182,17 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             }
             return finalStream;
         });
+
         streamy = streamy.sort((a, b) => {
-            const aCached = a.name.includes("⚡") ? 1 : 0;
-            const bCached = b.name.includes("⚡") ? 1 : 0;
-            return bCached - aCached;
+            return (
+                b._sortCached - a._sortCached || 
+                b._sortQuality - a._sortQuality || 
+                b._sortSize - a._sortSize ||
+                (a.title || "").localeCompare(b.title || "", undefined, { numeric: true, sensitivity: "base" })
+            );
         });
+
+        streamy = streamy.map(({ _sortCached, _sortQuality, _sortSize, ...rest }) => rest);
 
         logSuccess(`TorBox stream formatting complete. Cached: ${streamy.filter(s => s.name.includes("⚡")).length}, Uncached: ${streamy.filter(s => s.name.includes("⏳")).length}`);
 

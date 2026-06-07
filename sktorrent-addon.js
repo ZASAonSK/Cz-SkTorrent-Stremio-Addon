@@ -108,6 +108,27 @@ function formatBytes(bytes) {
     return `${n.toFixed(i >= 2 ? 2 : 0)} ${u[i]}`;
 }
 
+function getQualityRank(text = "") {
+    const t = text.toLowerCase();
+    if (t.includes("2160p") || t.includes("4k") || t.includes("uhd")) return 4;
+    if (t.includes("1080p") || t.includes("fhd")) return 3;
+    if (t.includes("720p") || /\bhd\b/.test(t)) return 2;
+    if (t.includes("480p")) return 1;
+    return 0;
+}
+
+function getSizeBytes(text = "") {
+    const m = text.match(/(\d+(?:[.,]\d+)?)\s*(tb|gb|mb|kb)\b/i);
+    if (!m) return 0;
+    const value = parseFloat(m[1].replace(",", "."));
+    const unit = m[2].toLowerCase();
+    if (unit === "tb") return value * 1024 * 1024 * 1024 * 1024;
+    if (unit === "gb") return value * 1024 * 1024 * 1024;
+    if (unit === "mb") return value * 1024 * 1024;
+    if (unit === "kb") return value * 1024;
+    return 0;
+}
+
 // ÚPLNE ZMENENÁ FUNKCIA (bez použitia withCache z tvojej Map)
 async function overitTorboxCache(infoHashes, torboxKey) {
     if (!torboxKey || !infoHashes || infoHashes.length === 0) return {};
@@ -1269,68 +1290,73 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         torrenty.map(t => execLimit(() => vytvoritStream(t, seria, epizoda, userAxios, metaInfo, userConfig)))
     )).filter(Boolean);
 
-        if (userConfig.torbox && streamy.length > 0) {
-        logInfo("TorBox enabled. Preparing streams for TorBox playback...");
-        const hasheKONTROLA = streamy.map(s => s.infoHash).filter(Boolean); 
-        const torboxCache = await overitTorboxCache(hasheKONTROLA, userConfig.torbox);
+        // ── TORBOX REŽIM ──
+        if (userConfig.torbox) {
+            logInfo("TorBox enabled. Preparing streams for TorBox playback...");
+            const hasheKONTROLA = streamy.map(s => s.infoHash).filter(Boolean);
+            const torboxCache = await overitTorboxCache(hasheKONTROLA, userConfig.torbox);
 
-        function getQualityRank(text = "") {
-            const t = text.toLowerCase();
-            if (t.includes("2160p") || t.includes("4k") || t.includes("uhd")) return 4;
-            if (t.includes("1080p") || t.includes("fhd")) return 3;
-            if (t.includes("720p") || /\bhd\b/.test(t)) return 2;
-            if (t.includes("480p")) return 1;
-            return 0;
-        }
+            streamy = streamy.map(stream => {
+                const hash = stream.infoHash.toLowerCase();
+                const jeCached = torboxCache[hash] === true;
+                const staraKategoria = stream.name.split("\n")[1] || "";
+                const proxySeria = seria || 0;
+                const proxyEpizoda = epizoda || 0;
+                const sortText = `${staraKategoria} ${stream.title || ""}`;
 
-        function getSizeBytes(text = "") {
-            const m = text.match(/(\d+(?:[.,]\d+)?)\s*(tb|gb|mb|kb)\b/i);
-            if (!m) return 0;
-            const value = parseFloat(m[1].replace(",", "."));
-            const unit = m[2].toLowerCase();
-            if (unit === "tb") return value * 1024 * 1024 * 1024 * 1024;
-            if (unit === "gb") return value * 1024 * 1024 * 1024;
-            if (unit === "mb") return value * 1024 * 1024;
-            if (unit === "kb") return value * 1024;
-            return 0;
-        }
-        
-        streamy = streamy.map(stream => {
-            const hash = stream.infoHash.toLowerCase();
-            const jeCached = torboxCache[hash] === true;
-            const staraKategoria = stream.name.split("\n")[1] || "";
-            const proxySeria = seria || 0;
-            const proxyEpizoda = epizoda || 0;
-            
-            const sortText = `${staraKategoria} ${stream.title || ""}`;
-            
-            let finalStream = {
-                name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
-                title: stream.title,
-                type: vlastnyTyp,
-                behaviorHints: stream.behaviorHints,
+                let finalStream = {
+                    name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
+                    title: stream.title,
+                    type: vlastnyTyp,
+                    behaviorHints: stream.behaviorHints,
+                    _sortCached: jeCached ? 1 : 0,
+                    _sortDub: stream.isDub ? 1 : 0,
+                    _sortQuality: getQualityRank(sortText),
+                    _sortSize: getSizeBytes(sortText)
+                };
 
-                _sortCached: jeCached ? 1 : 0,
-                _sortDub: stream.isDub ? 1 : 0,
-                _sortQuality: getQualityRank(sortText),
-                _sortSize: getSizeBytes(sortText)
-            };
+                if (jeCached) {
+                    const safeName = (stream.fileName || "video.mkv").split('/').join('|');
+                    finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(safeName)}`;
+                } else {
+                    finalStream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
+                }
+                return finalStream;
+            });
 
-            if (jeCached) {
-                const safeName = (stream.fileName || "video.mkv").split('/').join('|');
-                finalStream.url = `${PUBLIC_URL}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(safeName)}`;
-            } else {
-                finalStream.url = `${PUBLIC_URL}/${config}/download/${hash}/${stream.sktId}`;
+            const showUncached = userConfig.showUncached !== undefined ? userConfig.showUncached : true;
+            if (!showUncached) {
+                streamy = streamy.filter(s => s._sortCached === 1);
             }
-            return finalStream;
-        });
-
-        const showUncached = userConfig.showUncached !== undefined ? userConfig.showUncached : true;
-        if (!showUncached) {
-            streamy = streamy.filter(s => s._sortCached === 1);
         }
 
-        const sizeOrder = userConfig.sizeOrder || "desc"; 
+        // ── P2P REŽIM (bez TorBoxu) ──
+        if (!userConfig.torbox && streamy.length > 0) {
+            logInfo("TorBox not configured. Using P2P mode (WebTorrent).");
+            streamy = streamy.map(stream => {
+                const staraKategoria = stream.name.split("\n")[1] || "";
+                const sortText = `${staraKategoria} ${stream.title || ""}`;
+                return {
+                    name: `SKT\n${staraKategoria}`,
+                    title: stream.title,
+                    infoHash: stream.infoHash,
+                    fileIdx: stream.fileIdx,
+                    behaviorHints: stream.behaviorHints,
+                    _sortCached: 0,
+                    _sortDub: stream.isDub ? 1 : 0,
+                    _sortQuality: getQualityRank(sortText),
+                    _sortSize: getSizeBytes(sortText)
+                };
+            });
+        }
+
+        // ── Ak nie sú žiadne streamy ──
+        if (streamy.length === 0) {
+            logInfo("No streams found. Returning empty list.");
+            return res.json({ streams: [] });
+        }
+
+        const sizeOrder = userConfig.sizeOrder || "desc";
         const defaultQualityOrder = [4, 3, 2, 1, 0];
         const qualityOrder = userConfig.qualityOrder || defaultQualityOrder;
 
@@ -1346,7 +1372,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 
             const indexA = qualityOrder.indexOf(a._sortQuality);
             const indexB = qualityOrder.indexOf(b._sortQuality);
-            
+
             const rankA = indexA === -1 ? 99 : indexA;
             const rankB = indexB === -1 ? 99 : indexB;
 
@@ -1361,23 +1387,21 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             }
         });
 
+        // Odstrániť interné _sort polia
         streamy = streamy.map(({ _sortCached, _sortDub, _sortQuality, _sortSize, ...rest }) => rest);
-
-        logSuccess(`TorBox stream formatting complete. Cached: ${streamy.filter(s => s.name.includes("⚡")).length}, Uncached: ${streamy.filter(s => s.name.includes("⏳")).length}`);
 
         const trvanie = Date.now() - startCas;
         logSuccess(`Stream request finished in ${trvanie}ms. Returning ${streamy.length} streams to Stremio.`);
 
-        const maUncachedStreamy = streamy.some(s => s.name && s.name.includes("⏳"));
-        const cacheMaxAge = maUncachedStreamy ? 60 : 3600;
-        res.setHeader('Cache-Control', `max-age=${cacheMaxAge}, stale-while-revalidate=${cacheMaxAge}, stale-if-error=${cacheMaxAge}`);
-        // ---------------------------------
+        // Cache-Control len pre TorBox režim
+        if (userConfig.torbox) {
+            const maUncachedStreamy = streamy.some(s => s.name && s.name.includes("⏳"));
+            const cacheMaxAge = maUncachedStreamy ? 60 : 3600;
+            res.setHeader('Cache-Control', `max-age=${cacheMaxAge}, stale-while-revalidate=${cacheMaxAge}, stale-if-error=${cacheMaxAge}`);
+        }
 
         return res.json({ streams: streamy });
-
-
-    } 
-});
+    });
 
 
 // =========================================================================

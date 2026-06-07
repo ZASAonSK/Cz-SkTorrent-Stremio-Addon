@@ -2,14 +2,11 @@
 
 Neoficiálny Stremio doplnok pre vyhľadávanie a streamovanie filmov a seriálov z populárneho slovenského trackera **SKTorrent.eu**. Addon funguje na princípe vlastnej konfigurácie – každý používateľ si zadáva svoje vlastné prihlasovacie údaje (cookies) z SKTorrentu.
 
-## 🚀 Inštalácia (Dostupné inštancie)
+## 🚀 Inštalácia (Verejné inštancie)
 
-Addon si môžeš nainštalovať a nakonfigurovať na jednej z týchto verejne bežiacich inštancií:
+Addon si môžeš nainštalovať a nakonfigurovať na tejto verejne bežiacej inštancii:
 
-🔗 **[Genez.io Inštancia](https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io/)**  
-🔗 **[Koyeb Inštancia](https://managerial-karol-zasaonsk-d57eb595.koyeb.app/)**  
-
-*Vyber si ktorúkoľvek, obe obsahujú rovnakú verziu addonu.*
+🔗 **[Vercel Inštancia](https://cz-sk-torrent-stremio-addon.vercel.app/)**  *(odporúčaná)*
 
 ---
 
@@ -48,7 +45,7 @@ Ak si chceš addon spustiť lokálne alebo upravovať kód:
 
 ```bash
 # Naklonovanie repozitára
-git clone https://github.com/ZASAonSK/Cz-SkTorrent-Stremio-Addon.git
+git clone https://github.com/Judzim/Cz-SkTorrent-Stremio-Addon.git
 cd Cz-SkTorrent-Stremio-Addon
 
 # Inštalácia závislostí

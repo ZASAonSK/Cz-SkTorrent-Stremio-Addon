@@ -968,6 +968,7 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
 
             <label class="checkbox-label">
                 <input type="checkbox" id="preferDub" ${getCheck('preferDub', false)}> Preferovať SK/CZ dabing 🇸🇰🇨🇿
+            </label>
 
             <label>Zoradenie podľa veľkosti:</label>
             <select id="sizeOrder">

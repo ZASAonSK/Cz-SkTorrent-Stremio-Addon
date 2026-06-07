@@ -2246,9 +2246,10 @@ app.get("/info-video", (req, res) => {
     res.sendFile(path.join(__dirname, "stahuje-sa.mp4")); 
 });
 
-// Export pre Genezio/Vercel serverless
-module.exports = app;
+// Export pre Genezio (httpServer typ)
+exports.handler = app;
 
+// fallback pre lokálne spustenie
 app.listen(PORT, () => {
     console.log(`\n======================================================`);
     console.log(`🚀 SKTorrent Multi-User beží na portu ${PORT}`);

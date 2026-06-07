@@ -956,7 +956,7 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
             <label>TMDB API Key (Voliteľné)</label>
             <input type="text" id="tmdb" placeholder="TMDB token" value="${getVal('tmdb')}">
 
-            <label>TVDB API Key (Voliteľné — vyhľadáva SK/CZ názvy)</label>
+            <label>TVDB API Key (Voliteľné)</label>
             <input type="text" id="tvdb" placeholder="TVDB token" value="${getVal('tvdb')}">
             
             <hr style="border: 1px solid #444; margin-top: 20px;">

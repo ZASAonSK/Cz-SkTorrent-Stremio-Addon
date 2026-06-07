@@ -15,7 +15,7 @@ const cors = require("cors");
 
 const PORT = process.env.PORT || 7000; 
 // const PUBLIC_URL = "https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io"; 
-const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`; 
+const PUBLIC_URL = process.env.PUBLIC_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${PORT}`); 
 const BASE_URL = "https://sktorrent.eu"; 
 const SEARCH_URL = `${BASE_URL}/torrent/torrents_v2.php`;
 const TVDB_API_KEY = "d786995d-7841-4640-a4a5-8d30592d1651";

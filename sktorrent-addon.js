@@ -806,8 +806,26 @@ if (videoSubory.length === 1) {
     if (analyzaNazvu.includes("hevc") || analyzaNazvu.includes("h265") || analyzaNazvu.includes("h.265") || analyzaNazvu.includes("x265")) kvality.push("HEVC");
     else if (analyzaNazvu.includes("x264") || analyzaNazvu.includes("h264") || analyzaNazvu.includes("h.264") || analyzaNazvu.includes("avc")) kvality.push("H.264");
     if (analyzaNazvu.includes("atmos")) kvality.push("Atmos");
+    const sourceTypes = [];
+    if (/\bweb[\s.-]?dl\b/i.test(cistyNazov)) sourceTypes.push('webdl');
+    else if (/\bbluray\b|\bbdrip\b|\bbdremux\b/i.test(cistyNazov)) sourceTypes.push('bluray');
+    if (/\bhdtv\b/i.test(cistyNazov)) sourceTypes.push('hdtv');
+    if (/\bdvdrip\b/i.test(cistyNazov)) sourceTypes.push('dvdrip');
+    if (/\bweb[\s.-]?rip\b/i.test(cistyNazov)) sourceTypes.push('webrip');
+    if (/\bhdrip\b/i.test(cistyNazov)) sourceTypes.push('hdrip');
+    if (/\bppv\b/i.test(cistyNazov)) sourceTypes.push('ppv');
+    if (/\b(?:remux|remastered)\b/i.test(cistyNazov)) sourceTypes.push('remux');
+    if (/\b(?:cam|tsrip|tele(?:sync|cine))\b/i.test(cistyNazov)) sourceTypes.push('cam');
+    const sourceTag = sourceTypes.length > 0 ? sourceTypes.join(',') : 'neznámy';
     const kvalitaText = kvality.length > 0 ? `🎥 ${kvality.join(" • ")}` : "🎥 Kvalita neznáma";
 
+    const hdrFeatures = [];
+    if (analyzaNazvu.includes('hdr10')) hdrFeatures.push('hdr10');
+    else if (analyzaNazvu.includes('hdr')) hdrFeatures.push('hdr');
+    if (analyzaNazvu.includes('dovi') || analyzaNazvu.includes('vision')) hdrFeatures.push('dv');
+    if (analyzaNazvu.includes('hevc') || analyzaNazvu.includes('h265') || analyzaNazvu.includes('x265')) hdrFeatures.push('hevc');
+    if (analyzaNazvu.includes('atmos')) hdrFeatures.push('atmos');
+    const hdrTag = hdrFeatures.length > 0 ? hdrFeatures.join(',') : '';
     const fileSize = najdenyIndex !== -1 ? 
         (torrentData.files.find(f => f.index === najdenyIndex)?.length || 0) : 
         torrentData.files.reduce((acc, f) => acc + (f.length || 0), 0);
@@ -834,6 +852,13 @@ if (videoSubory.length === 1) {
     // Vytvorenie lepšie usporiadaného zoznamu
     const riadkyTitle = [];
 
+        // Apply show config from user settings
+    const showConfig = userConfig && userConfig.show;
+    const shouldShow = function(field) {
+        if (!showConfig || !Array.isArray(showConfig) || showConfig.length === 0) return true;
+        return showConfig.indexOf(field) >= 0;
+    };
+
     // Riadok 1: Skutočný Názov (CZ/EN) + Rok (čistý rok v zátvorke pre krajší dizajn)
     if (titleLine) {
         let rokCisty = rokText.replace("📅 ", ""); // Odstránime ikonu, nech to vyzerá filmovejšie
@@ -846,10 +871,20 @@ if (videoSubory.length === 1) {
     }
 
     // Riadok 3: Vlastnosti streamu (Jazyk a Kvalita oddelené čiarou)
-    riadkyTitle.push(`🔊 ${jazykText}   |   ${kvalitaText}`);
+    if (shouldShow('lang') || shouldShow('quality')) {
+        var langPart = shouldShow('lang') ? jazykText : '';
+        var qualPart = shouldShow('quality') ? kvalitaText : '';
+        var sep = langPart && qualPart ? '   |   ' : '';
+        riadkyTitle.push(`🔊 ${langPart}${sep}${qualPart}`);
+    }
 
     // Riadok 4: Technické info (Veľkosť a počet Seedov)
-    riadkyTitle.push(`${velkostText}   |   ${seedersText}`);
+    if (shouldShow('size') || shouldShow('seeds')) {
+        var sizePart = shouldShow('size') ? velkostText : '';
+        var seedPart = shouldShow('seeds') ? seedersText : '';
+        var sep2 = sizePart && seedPart ? '   |   ' : '';
+        riadkyTitle.push(`${sizePart}${sep2}${seedPart}`);
+    }
 
     // Riadok 5: Konkrétny nájdený súbor, ktorý sa ide prehrať (Ak sa našiel v packu)
     if (najdenyNazovSuboru) {
@@ -879,7 +914,11 @@ if (videoSubory.length === 1) {
         fileName: cistyNazovSuboru,
         infoHash: torrentData.infoHash,
         fileIdx: najdenyIndex === -1 ? 0 : najdenyIndex,
-        isDub: jeSKCZ
+        isDub: jeSKCZ,
+        seeds: t.seeds,
+        _sortHdr: hdrTag,
+        _sortSource: sourceTag,
+        dubLang: jeSKCZ ? (langMatch.find(function(l) { return /^(CZ|SK)$/i.test(l); }) || '').toLowerCase() : ''
     };
 
     return streamObj;
@@ -918,18 +957,21 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
         if (currentConfig[key] !== undefined) return currentConfig[key] === val ? 'selected' : '';
         return val === defaultVal ? 'selected' : '';
     };
-
-    const getQualityVal = (index, defaultVal) => {
-        if (currentConfig.qualityOrder && currentConfig.qualityOrder[index] !== undefined) {
-            return currentConfig.qualityOrder[index];
+    const hasArrVal = (key, val, defaultActive) => {
+        const v = currentConfig[key];
+        if (v === undefined) return defaultActive ? 'active' : '';
+        if (Array.isArray(v)) return v.includes(val) ? 'active' : '';
+        return String(v).split(',').includes(val) ? 'active' : '';
+    };
+    const getSortSelectVal = (idx) => {
+        const sort = currentConfig.sort;
+        if (sort && Array.isArray(sort) && sort[idx]) return sort[idx];
+        if (sort && typeof sort === 'string') {
+            try { const arr = JSON.parse(sort); if (arr[idx]) return arr[idx]; } catch(e) {}
         }
-        return defaultVal;
+        return ['cached','quality','lang','seeds','size'][idx] || 'cached';
     };
 
-    const q1 = getQualityVal(0, 4);
-    const q2 = getQualityVal(1, 3);
-    const q3 = getQualityVal(2, 2);
-    const q4 = getQualityVal(3, 1);
 
     const html = `
     <!DOCTYPE html>
@@ -937,137 +979,594 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>SKTorrent Multi-User Addon</title>
+        <title>SKTorrent Addon</title>
         <style>
-            body { font-family: Arial, sans-serif; background: #111; color: white; display: flex; justify-content: center; padding-top: 50px; }
-            .container { background: #222; padding: 30px; border-radius: 8px; width: 100%; max-width: 450px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-            h2 { text-align: center; color: #8A5A9E; margin-bottom: 5px; }
-            label { display: block; margin-top: 15px; font-size: 14px; font-weight: bold; }
-            input, select { width: 100%; padding: 10px; margin-top: 5px; background: #333; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;}
-            .inline-selects { display: flex; justify-content: space-between; gap: 10px; margin-top: 5px;}
-            .inline-selects select { width: 22%; text-align: center; }
-            button { width: 100%; padding: 12px; margin-top: 25px; background: #8A5A9E; color: white; border: none; font-size: 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-            button:hover { background: #6b467a; }
-            
-            #result-box { display: none; margin-top: 20px; padding: 15px; background: #1a1a1a; border: 1px solid #8A5A9E; border-radius: 4px; text-align: center; }
-            #generated-url { width: 100%; font-size: 12px; padding: 8px; margin: 10px 0; background: #000; color: #0f0; border: 1px solid #333; word-break: break-all; box-sizing: border-box; resize: none; overflow: hidden; height: 60px; }
-            .copy-btn { background: #444; margin-top: 5px; }
-            .copy-btn:hover { background: #555; }
-            .install-btn { background: #28a745; margin-top: 10px; }
-            .install-btn:hover { background: #218838; }
-            
-            .checkbox-label { display: flex; align-items: center; font-weight: normal; margin-top: 15px; }
-            .checkbox-label input { width: auto; margin-right: 10px; margin-top: 0;}
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d0d0d; color: #e0e0e0; display: flex; justify-content: center; padding: 30px 15px; }
+            .container { background: #1a1a2e; padding: 0; border-radius: 12px; width: 100%; max-width: 500px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); overflow: hidden; }
+            .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); padding: 24px; text-align: center; border-bottom: 1px solid #2a2a4a; }
+            .header h2 { font-size: 22px; font-weight: 700; background: linear-gradient(135deg, #8A5A9E, #e040a0); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+            .header p { font-size: 13px; color: #888; margin-top: 6px; }
+
+            .section { border-bottom: 1px solid #2a2a4a; }
+            .section:last-child { border-bottom: none; }
+            .section-header { display: flex; align-items: center; gap: 10px; padding: 16px 20px 8px; font-size: 13px; font-weight: 600; color: #8A5A9E; text-transform: uppercase; letter-spacing: 0.5px; }
+            .section-header .icon { font-size: 18px; }
+            .section-desc { padding: 0 20px 12px; font-size: 12px; color: #666; }
+
+            .field { padding: 8px 20px; }
+            .field label { display: block; font-size: 12px; font-weight: 600; color: #aaa; margin-bottom: 4px; }
+            .field input, .field select { width: 100%; padding: 10px 12px; background: #0d0d1a; border: 1px solid #2a2a4a; color: #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; transition: border 0.2s; }
+            .field input:focus, .field select:focus { border-color: #8A5A9E; }
+            .field select { cursor: pointer; appearance: auto; }
+
+            .checkbox-row { display: flex; align-items: center; gap: 10px; padding: 6px 20px; cursor: pointer; }
+            .checkbox-row:hover { background: rgba(138,90,158,0.05); }
+            .checkbox-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #8A5A9E; cursor: pointer; }
+            .checkbox-row .label-text { font-size: 14px; color: #ccc; }
+            .checkbox-row .label-desc { font-size: 11px; color: #666; margin-left: auto; }
+
+            .chip-group { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 20px; }
+            .chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; background: #0d0d1a; border: 1px solid #2a2a4a; border-radius: 20px; font-size: 13px; color: #ccc; cursor: pointer; transition: all 0.2s; user-select: none; }
+            .chip:hover { border-color: #8A5A9E; }
+            .chip.active { background: #8A5A9E6; border-color: #8A5A9E; color: #fff; background: rgba(138,90,158,0.25); }
+
+            .sort-row { display: flex; align-items: center; gap: 8px; padding: 6px 20px; }
+            .sort-row .num { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; background: #0d0d1a; border: 1px solid #2a2a4a; border-radius: 50%; font-size: 11px; color: #666; flex-shrink: 0; }
+            .sort-row select { flex: 1; padding: 8px 10px; background: #0d0d1a; border: 1px solid #2a2a4a; color: #e0e0e0; border-radius: 8px; font-size: 13px; outline: none; cursor: pointer; }
+            .sort-row select:focus { border-color: #8A5A9E; }
+            .sort-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: #0d0d1a; border: 1px solid #2a2a4a; border-radius: 6px; color: #666; cursor: pointer; font-size: 14px; flex-shrink: 0; transition: all 0.2s; }
+            .sort-btn:hover { border-color: #8A5A9E; color: #8A5A9E; }
+            .sort-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+            .sort-toggle { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; color: #8A5A9E; cursor: pointer; font-size: 16px; flex-shrink: 0; padding: 0; transition: opacity 0.2s; }
+            .sort-toggle:hover { opacity: 0.7; }
+
+            .btn-primary { width: calc(100% - 40px); margin: 16px 20px; padding: 12px; background: linear-gradient(135deg, #8A5A9E, #e040a0); color: white; border: none; font-size: 15px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+            .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(138,90,158,0.4); }
+
+            #result-box { display: none; margin: 0 20px 20px; padding: 20px; background: rgba(138,90,158,0.08); border: 1px solid #8A5A9E; border-radius: 10px; text-align: center; }
+            #result-box p { font-size: 12px; color: #8A5A9E; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+            #generated-url { width: 100%; font-size: 12px; font-family: 'Courier New', monospace; padding: 10px; margin-bottom: 14px; background: #0d0d1a; color: #e0e0e0; border: 1px solid #2a2a4a; border-radius: 8px; word-break: break-all; resize: none; height: 52px; outline: none; transition: border 0.2s; }
+            #generated-url:focus { border-color: #8A5A9E; }
+            .btn-sm { padding: 8px 16px; border: 1px solid #2a2a4a; border-radius: 8px; font-size: 13px; cursor: pointer; margin: 3px; transition: all 0.2s; }
+            .btn-copy { background: #0d0d1a; color: #ccc; }
+            .btn-copy:hover { background: rgba(138,90,158,0.25); border-color: #8A5A9E; color: #fff; }
+            .btn-install { background: linear-gradient(135deg, #8A5A9E, #e040a0); color: white; border: none; }
+            .btn-install:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(138,90,158,0.4); }
+            .lang-btn { background:none; border:1px solid #2a2a4a; border-radius:6px; padding:4px 10px; font-size:13px; color:#ccc; cursor:pointer; transition:all 0.2s; }
+            .lang-btn:hover { border-color: #8A5A9E; }
+            .lang-btn.active { border-color: #8A5A9E; background: rgba(138,90,158,0.2); color:#fff; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h2>SKTorrent Addon</h2>
-            <p style="text-align:center; font-size:13px; color:#aaa;">Vyplň svoje údaje na vygenerovanie inštalačného odkazu.</p>
-            
-            <label>SKTorrent UID (Cookie s názvom uid)</label>
-            <input type="text" id="uid" placeholder="Napr. 123987" value="${getVal('uid')}" required>
-            
-            <label>SKTorrent pass (Tiež z cookies s názvom pass)</label>
-            <input type="password" id="pass" placeholder="Tvoj pass" value="${getVal('pass')}" required>
-            
-            <label>TorBox API Key (Odporúčané)</label>
-            <input type="text" id="torbox" placeholder="TorBox token" value="${getVal('torbox')}">
-            
-            <label>TMDB API Key (Voliteľné)</label>
-            <input type="text" id="tmdb" placeholder="TMDB token" value="${getVal('tmdb')}">
-
-            <label>TVDB API Key (Voliteľné)</label>
-            <input type="text" id="tvdb" placeholder="TVDB token" value="${getVal('tvdb')}">
-            
-            <hr style="border: 1px solid #444; margin-top: 20px;">
-            <h3 style="text-align: center; color: #aaa; margin-bottom: 5px;">Nastavenia zobrazenia</h3>
-
-            <label class="checkbox-label">
-                <input type="checkbox" id="showUncached" ${getCheck('showUncached', true)}> Zobraziť nenastiahnuté (Uncached ⏳)
-            </label>
-
-            <label class="checkbox-label">
-                <input type="checkbox" id="preferDub" ${getCheck('preferDub', false)}> Preferovať SK/CZ dabing 🇸🇰🇨🇿
-            </label>
-
-            <label>Zoradenie podľa veľkosti:</label>
-            <select id="sizeOrder">
-                <option value="desc" ${getSelect('sizeOrder', 'desc', 'desc')}>Najväčšie prvé (Odporúčané)</option>
-                <option value="asc" ${getSelect('sizeOrder', 'asc', 'desc')}>Najmenšie prvé</option>
-            </select>
-
-            <label>Priorita kvality (1. až 4.):</label>
-            <div class="inline-selects">
-                <select class="q-order"><option value="4" ${q1 === 4 ? 'selected':''}>4K</option><option value="3" ${q1 === 3 ? 'selected':''}>1080p</option><option value="2" ${q1 === 2 ? 'selected':''}>720p</option><option value="1" ${q1 === 1 ? 'selected':''}>SD</option></select>
-                <select class="q-order"><option value="4" ${q2 === 4 ? 'selected':''}>4K</option><option value="3" ${q2 === 3 ? 'selected':''}>1080p</option><option value="2" ${q2 === 2 ? 'selected':''}>720p</option><option value="1" ${q2 === 1 ? 'selected':''}>SD</option></select>
-                <select class="q-order"><option value="4" ${q3 === 4 ? 'selected':''}>4K</option><option value="3" ${q3 === 3 ? 'selected':''}>1080p</option><option value="2" ${q3 === 2 ? 'selected':''}>720p</option><option value="1" ${q3 === 1 ? 'selected':''}>SD</option></select>
-                <select class="q-order"><option value="4" ${q4 === 4 ? 'selected':''}>4K</option><option value="3" ${q4 === 3 ? 'selected':''}>1080p</option><option value="2" ${q4 === 2 ? 'selected':''}>720p</option><option value="1" ${q4 === 1 ? 'selected':''}>SD</option></select>
+            <div class="header">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="flex:1;text-align:left;">
+                        <button class="lang-btn active" data-lang-btn="sk" onclick="setLang('sk')">🇸🇰</button>
+                        <button class="lang-btn" data-lang-btn="en" onclick="setLang('en')">🇬🇧</button>
+                    </div>
+                    <div style="flex:2;">
+                        <h2 data-i18n="title">✦ SKTorrent Addon</h2>
+                        <p data-i18n="subtitle" style="font-size:13px;color:#888;margin-top:6px;">Nastav si preferencie a vygeneruj inštalačný odkaz</p>
+                    </div>
+                </div>
             </div>
 
-            <button onclick="generateLink()">Vygenerovať odkaz</button>
+            <!-- 🔌 Connection -->
+            <div class="section">
+                <div class="section-header"><span class="icon">🔌</span> <span data-i18n="section.connection">Connection</span></div>
+                <div class="section-desc" data-i18n="desc.connection">Prihlasovacie údaje a API kľúče</div>
+                <div class="field">
+                    <label data-i18n="label.uid">SKTorrent UID</label>
+                    <input type="text" id="uid" data-i18n-placeholder="uid.placeholder" placeholder="Napr. 123987" value="${getVal('uid')}">
+                    <div style="font-size:11px;color:#666;margin-top:2px;" data-i18n="uid.help">ℹ️ Nájdeš v cookies po prihlásení na sktorrent.eu</div>
+                </div>
+                <div class="field">
+                        <label data-i18n="label.pass">SKTorrent pass</label>
+                    <input type="password" id="pass" data-i18n-placeholder="pass.placeholder" placeholder="Tvoj pass" value="${getVal('pass')}">
+                    <div style="font-size:11px;color:#666;margin-top:2px;" data-i18n="pass.help">ℹ️ Nájdeš v cookies po prihlásení na sktorrent.eu</div>
+                </div>
+                <div class="field">
+                    <label data-i18n="label.torbox">TorBox API kľúč</label>
+                    <input type="text" id="torbox" data-i18n-placeholder="torbox.placeholder" placeholder="TorBox token" value="${getVal('torbox')}">
+                    <div style="font-size:11px;color:#666;margin-top:2px;"><a href="https://torbox.app/settings?section=account" target="_blank" rel="noopener" style="color:#8A5A9E;text-decoration:none;" data-i18n-link="torbox.help">🔗 torbox.app/settings?section=account</a></div>
+                </div>
+                <div class="field">
+                    <label><span data-i18n="label.tmdb">TMDB API kľúč</span> <span style="color:#666;font-weight:400;" data-i18n-optional="label.tmdb.optional">(voliteľné)</span></label>
+                    <input type="text" id="tmdb" data-i18n-placeholder="tmdb.placeholder" placeholder="TMDB token" value="${getVal('tmdb')}">
+                    <div style="font-size:11px;color:#666;margin-top:2px;"><a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener" style="color:#8A5A9E;text-decoration:none;" data-i18n-link="tmdb.help">🔗 themoviedb.org/settings/api</a></div>
+                </div>
+                <div class="field" style="padding-bottom:16px;">
+                    <label><span data-i18n="label.tvdb">TVDB API kľúč</span> <span style="color:#666;font-weight:400;" data-i18n-optional="label.tvdb.optional">(voliteľné)</span></label>
+                    <input type="text" id="tvdb" data-i18n-placeholder="tvdb.placeholder" placeholder="TVDB token" value="${getVal('tvdb')}">
+                    <div style="font-size:11px;color:#666;margin-top:2px;"><a href="https://thetvdb.com/dashboard/account/apikey" target="_blank" rel="noopener" style="color:#8A5A9E;text-decoration:none;" data-i18n-link="tvdb.help">🔗 thetvdb.com/dashboard/account/apikey</a></div>
+                </div>
+            </div>
+
+            <!-- 🌐 Language & Display -->
+            <div class="section">
+                <div class="section-header"><span class="icon">🌐</span> <span data-i18n="section.display">Language &amp; Display</span></div>
+                <div class="section-desc" data-i18n="desc.display">Nastavenia jazyka a zobrazenia výsledkov</div>
+
+                <div style="padding: 8px 20px 4px;"><label style="font-size:12px;font-weight:600;color:#aaa;" data-i18n="label.preferLangs">Preferované jazyky</label></div>
+                <div class="chip-group" id="langChips">
+                    <span class="chip ${hasArrVal('lang','sk',true)}" data-lang="sk" onclick="toggleChip(this)">🇸🇰 SK</span>
+                    <span class="chip ${hasArrVal('lang','cz',true)}" data-lang="cz" onclick="toggleChip(this)">🇨🇿 CZ</span>
+                    <span class="chip ${hasArrVal('lang','en',false)}" data-lang="en" onclick="toggleChip(this)">🇬🇧 EN</span>
+                    <span class="chip ${hasArrVal('lang','multi',false)}" data-lang="multi" onclick="toggleChip(this)">🌍 Multi</span>
+                </div>
+
+                <div style="padding: 8px 20px 4px;"><label style="font-size:12px;font-weight:600;color:#aaa;" data-i18n="label.showInStream">Zobraziť v názve streamu</label></div>
+                <div class="chip-group" id="showChips" style="padding-bottom:12px;">
+                    <span class="chip ${hasArrVal('show','title',true)}" data-show="title" onclick="toggleChip(this)"><span data-i18n="chip.title">Názov</span></span>
+                    <span class="chip ${hasArrVal('show','quality',true)}" data-show="quality" onclick="toggleChip(this)"><span data-i18n="chip.quality">Kvalita</span></span>
+                    <span class="chip ${hasArrVal('show','size',true)}" data-show="size" onclick="toggleChip(this)"><span data-i18n="chip.size">Veľkosť</span></span>
+                    <span class="chip ${hasArrVal('show','lang',true)}" data-show="lang" onclick="toggleChip(this)"><span data-i18n="chip.lang">Jazyk</span></span>
+                    <span class="chip ${hasArrVal('show','seeds',true)}" data-show="seeds" onclick="toggleChip(this)"><span data-i18n="chip.seeds">Seedery</span></span>
+                </div>
+            </div>
+
+            <!-- 🎚️ Quality & Filters -->
+            <div class="section">
+                <div class="section-header"><span class="icon">🎚️</span> <span data-i18n="section.filters">Quality &amp; Filters</span></div>
+                <div class="section-desc" data-i18n="desc.filters">Obmedz kvalitu, veľkosť a počet výsledkov</div>
+
+                <div class="checkbox-row" onclick="toggleCheckbox('cachedOnly', event)">
+                    <input type="checkbox" id="cachedOnly" ${getCheck('cachedOnly', true)}>
+                    <span class="label-text" data-i18n="checkbox.cached">Cached Only</span>
+                    <span class="label-desc" data-i18n="checkbox.cached.desc">Len TorBox cachované streamy</span>
+                </div>
+                <div style="padding: 8px 20px 4px;"><label style="font-size:12px;font-weight:600;color:#aaa;" data-i18n="label.videoQuality">Kvalita videa</label></div>
+                <div class="chip-group" id="hdrChips" style="padding-bottom:12px;">
+                    <span class="chip active" data-hdr="hdr" onclick="toggleChip(this)">HDR</span>
+                    <span class="chip active" data-hdr="dv" onclick="toggleChip(this)">Dolby Vision</span>
+                    <span class="chip active" data-hdr="hevc" onclick="toggleChip(this)">HEVC</span>
+                    <span class="chip active" data-hdr="atmos" onclick="toggleChip(this)">Atmos</span>
+                </div>
+
+                <div style="padding: 8px 20px 4px;"><label style="font-size:12px;font-weight:600;color:#aaa;" data-i18n="label.filter18">18+ filter</label></div>
+                <div class="chip-group" id="adultChips" style="padding-bottom:4px;">
+                    <span class="chip active" data-adult="hide" onclick="toggleChip(this)"><span data-i18n="chip.hide18">Skryť 18+ obsah</span></span>
+                </div>
+
+                <div style="padding: 8px 20px 4px;"><label style="font-size:12px;font-weight:600;color:#aaa;" data-i18n="label.sourceType">🎞️ Typ zdroja</label></div>
+                <div class="chip-group" id="sourceChips" style="padding-bottom:12px;">
+                    <span class="chip active" data-source="webdl" onclick="toggleChip(this)">WEB-DL</span>
+                    <span class="chip active" data-source="bluray" onclick="toggleChip(this)">BluRay</span>
+                    <span class="chip active" data-source="hdtv" onclick="toggleChip(this)">HDTV</span>
+                    <span class="chip active" data-source="dvdrip" onclick="toggleChip(this)">DVDRip</span>
+                    <span class="chip active" data-source="webrip" onclick="toggleChip(this)">WEBRip</span>
+                    <span class="chip active" data-source="hdrip" onclick="toggleChip(this)">HDRip</span>
+                    <span class="chip active" data-source="ppv" onclick="toggleChip(this)">PPV</span>
+                    <span class="chip active" data-source="remux" onclick="toggleChip(this)">Remux</span>
+                </div>
+                <div style="padding: 0 20px 8px;font-size:11px;color:#555;" data-i18n="hint.allSources">Prázdne = všetky zdroje</div>
+
+                <div style="padding: 8px 20px 4px;"><label style="font-size:12px;font-weight:600;color:#aaa;" data-i18n="label.resolution">Rozlíšenie</label></div>
+                <div class="chip-group" id="resChips" style="padding-bottom:4px;">
+                    <span class="chip ${hasArrVal('res','2160p',true)}" data-res="2160p" onclick="toggleChip(this)">4K</span>
+                    <span class="chip ${hasArrVal('res','1080p',true)}" data-res="1080p" onclick="toggleChip(this)">1080p</span>
+                    <span class="chip ${hasArrVal('res','720p',true)}" data-res="720p" onclick="toggleChip(this)">720p</span>
+                    <span class="chip ${hasArrVal('res','sd',true)}" data-res="sd" onclick="toggleChip(this)">SD</span>
+                </div>
+                <div style="padding: 0 20px 8px;font-size:11px;color:#555;" data-i18n="hint.allResolutions">Prázdne = všetky rozlíšenia</div>
+
+                <div class="field">
+                    <label data-i18n="label.maxResults">Maximálny počet výsledkov</label>
+                    <select id="maxResults">
+                        <option value="0" ${getSelect('maxResults', '0', '0')} data-i18n="opt.unlimited">Neobmedzene</option>
+                        <option value="5" ${getSelect('maxResults', '5', '0')}>5</option>
+                        <option value="10" ${getSelect('maxResults', '10', '0')}>10</option>
+                        <option value="20" ${getSelect('maxResults', '20', '0')}>20</option>
+                        <option value="50" ${getSelect('maxResults', '50', '0')}>50</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label data-i18n="label.maxPerRes">Max. na rozlíšenie</label>
+                    <select id="maxPerRes">
+                        <option value="0" ${getSelect('maxPerRes', '0', '0')}><span data-i18n="opt.unlimited">Neobmedzene</span></option>
+                        <option value="1" ${getSelect('maxPerRes', '1', '0')}>1</option>
+                        <option value="2" ${getSelect('maxPerRes', '2', '0')}>2</option>
+                        <option value="3" ${getSelect('maxPerRes', '3', '0')}>3</option>
+                        <option value="5" ${getSelect('maxPerRes', '5', '0')}>5</option>
+                        <option value="10" ${getSelect('maxPerRes', '10', '0')}>10</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label data-i18n="label.maxSize">Max. veľkosť súboru</label>
+                    <select id="maxSize">
+                        <option value="0" ${getSelect('maxSize', '0', '0')}><span data-i18n="opt.unlimited">Neobmedzene</span></option>
+                        <option value="2" ${getSelect('maxSize', '2', '0')}>2 GB</option>
+                        <option value="4" ${getSelect('maxSize', '4', '0')}>4 GB</option>
+                        <option value="8" ${getSelect('maxSize', '8', '0')}>8 GB</option>
+                        <option value="16" ${getSelect('maxSize', '16', '0')}>16 GB</option>
+                        <option value="50" ${getSelect('maxSize', '50', '0')}>50 GB</option>
+                    </select>
+                </div>
+
+                <div class="field" style="padding-bottom:16px;">
+                    <label data-i18n="label.minSeeds">Minimálny počet seedov</label>
+                    <input type="number" id="minSeeds" value="${getVal('minSeeds') || '0'}" min="0" style="width:100px;">
+                </div>
+            </div>
+
+            <!-- 📊 Sort Order -->
+            <div class="section">
+                <div class="section-header"><span class="icon">📊</span> <span data-i18n="section.sort">Sort Order</span></div>
+                <div class="section-desc" data-i18n="desc.sort">Priorita radenia výsledkov</div>
+
+                <div id="sortOrders">
+                    <!-- Dynamicky vytvorene cez JS -->
+                </div>
+            </div>
+
+            <button class="btn-primary" onclick="generateLink()"><span data-i18n="button.generate">✨ Vygenerovať odkaz</span></button>
 
             <div id="result-box">
-                <p style="margin:0; font-size:14px; font-weight:bold; color:#8A5A9E;">Tvoj inštalačný odkaz:</p>
+                <p data-i18n="result.title">Tvoj inštalačný odkaz</p>
                 <textarea id="generated-url" readonly></textarea>
-                
-                <button class="copy-btn" onclick="copyUrl()">📋 Kopírovať do schránky</button>
-                <button class="install-btn" onclick="openStremio()">🚀 Nainštalovať do Stremia</button>
+                <button class="btn-sm btn-copy" onclick="copyUrl()"><span data-i18n="button.copy">📋 Kopírovať</span></button>
+                <button class="btn-sm btn-install" onclick="openStremio()"><span data-i18n="button.install">🚀 Inštalovať</span></button>
             </div>
         </div>
 
         <script>
-            function generateLink() {
-                var qSelects = document.querySelectorAll('.q-order');
-                var qArray = [];
-                for(var i = 0; i < qSelects.length; i++) {
-                    qArray.push(parseInt(qSelects[i].value));
-                }
-                qArray.push(0); 
+            var SORT_OPTIONS = ['cached', 'quality', 'lang', 'seeds', 'size'];
+            var SORT_LABELS = { cached: 'Cached', quality: 'Rozlíšenie', lang: 'Jazyk', seeds: 'Seedy', size: 'Veľkosť' };
+            var CURR_LANG = localStorage.getItem('sktorrent_lang') || 'sk';
 
-                var uniqueQArray = [];
-                for(var j = 0; j < qArray.length; j++) {
-                    if(uniqueQArray.indexOf(qArray[j]) === -1) {
-                        uniqueQArray.push(qArray[j]);
+            var I18N = {
+                sk: {
+                    'title': '✦ SKTorrent Addon',
+                    'subtitle': 'Nastav si preferencie a vygeneruj inštalačný odkaz',
+                    'section.connection': 'Pripojenie',
+                    'desc.connection': 'Prihlasovacie údaje a API kľúče',
+                    'label.uid': 'SKTorrent UID',
+                    'uid.help': 'ℹ️ Nájdeš v cookies po prihlásení na sktorrent.eu',
+                    'uid.placeholder': 'Napr. 123987',
+                    'label.pass': 'SKTorrent pass',
+                    'pass.help': 'ℹ️ Nájdeš v cookies po prihlásení na sktorrent.eu',
+                    'pass.placeholder': 'Tvoj pass',
+                    'label.torbox': 'TorBox API kľúč',
+                    'torbox.help': '🔗 https://torbox.app/settings?section=account',
+                    'torbox.placeholder': 'TorBox token',
+                    'label.tmdb': 'TMDB API kľúč',
+                    'label.tmdb.optional': '(voliteľné)',
+                    'tmdb.help': '🔗 https://www.themoviedb.org/settings/api',
+                    'tmdb.placeholder': 'TMDB token',
+                    'label.tvdb': 'TVDB API kľúč',
+                    'label.tvdb.optional': '(voliteľné)',
+                    'tvdb.help': '🔗 https://thetvdb.com/dashboard/account/apikey',
+                    'tvdb.placeholder': 'TVDB token',
+                    'section.display': 'Jazyk a zobrazenie',
+                    'desc.display': 'Nastavenia jazyka a zobrazenia výsledkov',
+                    'label.preferLangs': 'Preferované jazyky',
+                    'label.showInStream': 'Zobraziť v názve streamu',
+                    'chip.title': 'Názov',
+                    'chip.quality': 'Kvalita',
+                    'chip.size': 'Veľkosť',
+                    'chip.lang': 'Jazyk',
+                    'chip.seeds': 'Seedery',
+                    'section.filters': 'Kvalita a filtre',
+                    'desc.filters': 'Obmedz kvalitu, veľkosť a počet výsledkov',
+                    'checkbox.cached': 'Cached Only',
+                    'checkbox.cached.desc': 'Len TorBox cachované streamy',
+                    'label.videoQuality': 'Kvalita videa',
+                    'label.filter18': '18+ filter',
+                    'chip.hide18': 'Skryť 18+ obsah',
+                    'label.sourceType': '🎞️ Typ zdroja',
+                    'hint.allSources': 'Prázdne = všetky zdroje',
+                    'label.resolution': 'Rozlíšenie',
+                    'hint.allResolutions': 'Prázdne = všetky rozlíšenia',
+                    'label.maxResults': 'Maximálny počet výsledkov',
+                    'opt.unlimited': 'Neobmedzene',
+                    'label.maxPerRes': 'Max. na rozlíšenie',
+                    'label.maxSize': 'Max. veľkosť súboru',
+                    'label.minSeeds': 'Minimálny počet seedov',
+                    'desc.sort': 'Priorita radenia výsledkov',
+                    'button.generate': '✨ Vygenerovať odkaz',
+                    'result.title': 'Tvoj inštalačný odkaz',
+                    'button.copy': '📋 Kopírovať',
+                    'button.install': '🚀 Inštalovať',
+                    'alert.fillUidPass': 'Prosím, vyplň aspoň UID a pass pre SKTorrent.',
+                    'alert.codeError': 'Chyba pri generovaní kódu.',
+                    'button.copied': 'Skopírované!',
+                    'button.copyIdle': 'Kopírovať',
+                    'sort.toggleOn': 'Klikni pre vypnutie',
+                    'sort.toggleOff': 'Klikni pre zapnutie',
+                    'sort.cached': 'Cached',
+                    'sort.quality': 'Rozlíšenie',
+                    'sort.lang': 'Jazyk',
+                    'sort.seeds': 'Seedy',
+                    'sort.size': 'Veľkosť',
+                    'lang.sk': 'Slovenčina',
+                    'lang.en': 'English',
+                    'section.sort': 'Zoradenie',
+                },
+                en: {
+                    'title': '✦ SKTorrent Addon',
+                    'subtitle': 'Configure your preferences and generate install link',
+                    'section.sort': 'Sort Order',
+                    'section.connection': 'Connection',
+                    'desc.connection': 'Login credentials and API keys',
+                    'label.uid': 'SKTorrent UID',
+                    'uid.help': 'ℹ️ Found in cookies after logging in at sktorrent.eu',
+                    'uid.placeholder': 'e.g. 123987',
+                    'label.pass': 'SKTorrent pass',
+                    'pass.help': 'ℹ️ Found in cookies after logging in at sktorrent.eu',
+                    'pass.placeholder': 'Your pass',
+                    'label.torbox': 'TorBox API Key',
+                    'torbox.help': '🔗 https://torbox.app/settings?section=account',
+                    'torbox.placeholder': 'TorBox token',
+                    'label.tmdb': 'TMDB API Key',
+                    'label.tmdb.optional': '(optional)',
+                    'tmdb.help': '🔗 https://www.themoviedb.org/settings/api',
+                    'tmdb.placeholder': 'TMDB token',
+                    'label.tvdb': 'TVDB API Key',
+                    'label.tvdb.optional': '(optional)',
+                    'tvdb.help': '🔗 https://thetvdb.com/dashboard/account/apikey',
+                    'tvdb.placeholder': 'TVDB token',
+                    'section.display': 'Language & Display',
+                    'desc.display': 'Language and stream display settings',
+                    'label.preferLangs': 'Preferred languages',
+                    'label.showInStream': 'Show in stream name',
+                    'chip.title': 'Title',
+                    'chip.quality': 'Quality',
+                    'chip.size': 'Size',
+                    'chip.lang': 'Language',
+                    'chip.seeds': 'Seeders',
+                    'section.filters': 'Quality & Filters',
+                    'desc.filters': 'Limit quality, size, and number of results',
+                    'checkbox.cached': 'Cached Only',
+                    'checkbox.cached.desc': 'TorBox cached streams only',
+                    'label.videoQuality': 'Video quality',
+                    'label.filter18': '18+ filter',
+                    'chip.hide18': 'Hide 18+ content',
+                    'label.sourceType': '🎞️ Source type',
+                    'hint.allSources': 'Empty = all sources',
+                    'label.resolution': 'Resolution',
+                    'hint.allResolutions': 'Empty = all resolutions',
+                    'label.maxResults': 'Max results',
+                    'opt.unlimited': 'Unlimited',
+                    'label.maxPerRes': 'Max per resolution',
+                    'label.maxSize': 'Max file size',
+                    'label.minSeeds': 'Minimum seeders',
+                    'section.sort': 'Sort Order',
+                    'desc.sort': 'Result sorting priority',
+                    'button.generate': '✨ Generate link',
+                    'result.title': 'Your install link',
+                    'button.copy': '📋 Copy',
+                    'button.install': '🚀 Install',
+                    'alert.fillUidPass': 'Please fill in at least UID and pass for SKTorrent.',
+                    'alert.codeError': 'Error generating code.',
+                    'button.copied': 'Copied!',
+                    'button.copyIdle': 'Copy',
+                    'sort.toggleOn': 'Click to disable',
+                    'sort.toggleOff': 'Click to enable',
+                    'sort.cached': 'Cached',
+                    'sort.quality': 'Resolution',
+                    'sort.lang': 'Language',
+                    'sort.seeds': 'Seeders',
+                    'sort.size': 'Size',
+                    'lang.sk': 'Slovenčina',
+                    'lang.en': 'English',
+                }
+            };
+
+            function t(key) { return (I18N[CURR_LANG] && I18N[CURR_LANG][key]) || (I18N['en'] && I18N['en'][key]) || key; }
+
+            function setLang(lang) {
+                CURR_LANG = lang;
+                localStorage.setItem('sktorrent_lang', lang);
+                applyLang();
+            }
+
+            function applyLang() {
+                document.querySelectorAll('[data-i18n]').forEach(function(el) {
+                    var key = el.getAttribute('data-i18n');
+                    el.textContent = t(key);
+                });
+                document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el) {
+                    var key = el.getAttribute('data-i18n-placeholder');
+                    el.placeholder = t(key);
+                });
+                document.querySelectorAll('[data-i18n-optional]').forEach(function(el) {
+                    var key = el.getAttribute('data-i18n-optional');
+                    el.textContent = t(key);
+                });
+                document.querySelectorAll('[data-i18n-link]').forEach(function(el) {
+                    var key = el.getAttribute('data-i18n-link');
+                    el.textContent = t(key);
+                });
+                // Update SORT_LABELS
+                SORT_LABELS = { cached: t('sort.cached'), quality: t('sort.quality'), lang: t('sort.lang'), seeds: t('sort.seeds'), size: t('sort.size') };
+                // Re-render sort rows with new labels
+                var sortContainer = document.getElementById('sortOrders');
+                if (sortContainer) {
+                    var vals = [];
+                    var activeMask = [];
+                    var rows = sortContainer.querySelectorAll('.sort-row');
+                    for (var si = 0; si < rows.length; si++) {
+                        var sel = rows[si].querySelector('.sort-select');
+                        if (sel) vals.push(sel.value);
+                        activeMask.push(rows[si].dataset.active !== 'false');
+                    }
+                    if (vals.length) initSortRows(vals, activeMask);
+                }
+                // Update lang switcher active state
+                document.querySelectorAll('.lang-btn').forEach(function(btn) {
+                    var lb = btn.getAttribute('data-lang-btn');
+                    btn.classList.toggle('active', lb === CURR_LANG);
+                });
+            }
+
+            function getSortValues() {
+                var rows = document.querySelectorAll('.sort-row');
+                var vals = [];
+                for (var i = 0; i < rows.length; i++) {
+                    if (rows[i].dataset.active !== 'false') {
+                        var sel = rows[i].querySelector('.sort-select');
+                        vals.push(sel.value);
                     }
                 }
+                return vals;
+            }
 
+            function initSortRows(saved, activeMask) {
+                var container = document.getElementById('sortOrders');
+                container.innerHTML = '';
+                var used = saved && saved.length ? saved : SORT_OPTIONS;
+                if (!activeMask || activeMask.length !== used.length) {
+                    activeMask = [];
+                    for (var mi = 0; mi < used.length; mi++) activeMask.push(true);
+                }
+                for (var i = 0; i < used.length; i++) {
+                    var row = document.createElement('div');
+                    row.className = 'sort-row';
+                    row.dataset.idx = i;
+                    row.dataset.active = activeMask[i] ? 'true' : 'false';
+                    var numSpan = document.createElement('span');
+                    numSpan.className = 'num';
+                    numSpan.textContent = i + 1;
+                    row.appendChild(numSpan);
+
+                    var toggle = document.createElement('button');
+                    toggle.className = 'sort-toggle';
+                    toggle.innerHTML = activeMask[i] ? '\u25CF' : '\u25CB';
+                    toggle.setAttribute('onclick', 'toggleSortActive(this)');
+                    toggle.title = activeMask[i] ? 'Klikni pre vypnutie' : 'Klikni pre zapnutie';
+                    row.appendChild(toggle);
+
+                    var sel = document.createElement('select');
+                    sel.className = 'sort-select';
+                    for (var j = 0; j < SORT_OPTIONS.length; j++) {
+                        var opt = document.createElement('option');
+                        opt.value = SORT_OPTIONS[j];
+                        opt.textContent = SORT_LABELS[SORT_OPTIONS[j]];
+                        if (SORT_OPTIONS[j] === used[i]) opt.selected = true;
+                        sel.appendChild(opt);
+                    }
+                    row.appendChild(sel);
+
+                    var up = document.createElement('button');
+                    up.className = 'sort-btn';
+                    up.innerHTML = '\u25B2';
+                    up.setAttribute('onclick', 'moveSort(this, -1)');
+                    if (i === 0) up.disabled = true;
+                    row.appendChild(up);
+
+                    var down = document.createElement('button');
+                    down.className = 'sort-btn';
+                    down.innerHTML = '\u25BC';
+                    down.setAttribute('onclick', 'moveSort(this, 1)');
+                    if (i === used.length - 1) down.disabled = true;
+                    row.appendChild(down);
+
+                    container.appendChild(row);
+                }
+            }
+
+            function moveSort(btn, dir) {
+                var row = btn.parentNode;
+                var container = document.getElementById('sortOrders');
+                var rows = container.querySelectorAll('.sort-row');
+                var idx = Array.prototype.indexOf.call(rows, row);
+                var newIdx = idx + dir;
+                if (newIdx < 0 || newIdx >= rows.length) return;
+                // Read ALL values and active states from DOM
+                var vals = [];
+                var activeMask = [];
+                for (var si = 0; si < rows.length; si++) {
+                    var s = rows[si].querySelector('.sort-select');
+                    vals.push(s.value);
+                    activeMask.push(rows[si].dataset.active !== 'false');
+                }
+                var tmp = vals[idx];
+                vals[idx] = vals[newIdx];
+                vals[newIdx] = tmp;
+                var tmpMask = activeMask[idx];
+                activeMask[idx] = activeMask[newIdx];
+                activeMask[newIdx] = tmpMask;
+                initSortRows(vals, activeMask);
+            }
+
+            function toggleChip(el) {
+                el.classList.toggle('active');
+            }
+
+            function toggleCheckbox(id, event) {
+                if (event && event.target && event.target.type === 'checkbox') return;
+                var cb = document.getElementById(id);
+                cb.checked = !cb.checked;
+            }
+
+            function toggleSortActive(btn) {
+                var row = btn.parentNode;
+                var isActive = row.dataset.active !== 'false';
+                row.dataset.active = isActive ? 'false' : 'true';
+                btn.innerHTML = isActive ? '\u25CB' : '\u25CF';
+                btn.title = isActive ? t('sort.toggleOff') : t('sort.toggleOn');
+            }
+
+            function getActiveChips(selector) {
+                var chips = document.querySelectorAll(selector + '.active');
+                var vals = [];
+                for (var i = 0; i < chips.length; i++) {
+                    var chip = chips[i];
+                    var v = chip.dataset.lang || chip.dataset.show || chip.dataset.res || chip.dataset.hdr || chip.dataset.adult || chip.dataset.source || '';
+                    vals.push(v);
+                }
+                return vals;
+            }
+
+            function generateLink() {
                 var config = {
                     uid: document.getElementById('uid').value,
                     pass: document.getElementById('pass').value,
                     torbox: document.getElementById('torbox').value,
                     tmdb: document.getElementById('tmdb').value,
                     tvdb: document.getElementById('tvdb').value,
-                    preferDub: document.getElementById('preferDub').checked,
-                    showUncached: document.getElementById('showUncached').checked,
-                    sizeOrder: document.getElementById('sizeOrder').value,
-                    qualityOrder: uniqueQArray,
+                    lang: getActiveChips('#langChips .chip'),
+                    show: getActiveChips('#showChips .chip'),
+                    cachedOnly: document.getElementById('cachedOnly').checked,
+                    hdr: getActiveChips('#hdrChips .chip'),
+                    adult: getActiveChips('#adultChips .chip'),
+                    source: getActiveChips('#sourceChips .chip'),
+                    res: getActiveChips('#resChips .chip'),
+                    maxResults: document.getElementById('maxResults').value,
+                    maxPerRes: document.getElementById('maxPerRes').value,
+                    maxSize: document.getElementById('maxSize').value,
+                    minSeeds: document.getElementById('minSeeds').value,
+                    sort: getSortValues(),
                     cb: Date.now()
                 };
 
                 if(!config.uid || !config.pass) {
-                    alert('Prosím, vyplň aspoň UID a Heslo pre SKTorrent.'); 
+                    alert(t('alert.fillUidPass'));
                     return;
                 }
-                
+
                 try {
                     var jsonString = JSON.stringify(config);
                     var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)))
                         .split('+').join('-')
                         .split('/').join('_')
                         .split('=').join('');
-                        
+
                     var baseUrl = window.location.origin;
                     if (!baseUrl || baseUrl === "null") {
                         baseUrl = window.location.protocol + "//" + window.location.host;
                     }
-                    
+
                     var finalHttpUrl = baseUrl + '/' + encodedConfig + '/manifest.json';
-                    
+
                     document.getElementById('result-box').style.display = 'block';
                     document.getElementById('generated-url').value = finalHttpUrl;
                 } catch (error) {
-                    alert('Chyba pri generovaní kódu.');
+                    alert(t('alert.codeError'));
                     console.error(error);
                 }
             }
@@ -1076,9 +1575,11 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
                 var urlText = document.getElementById('generated-url');
                 urlText.select();
                 document.execCommand('copy');
-                var copyBtn = document.querySelector('.copy-btn');
-                copyBtn.innerText = "✅ Skopírované!";
-                setTimeout(function() { copyBtn.innerText = "📋 Kopírovať do schránky"; }, 2000);
+                var copyBtn = document.querySelector('.btn-copy span[data-i18n="button.copy"]');
+                if (copyBtn) {
+                    copyBtn.textContent = t('button.copied');
+                    setTimeout(function() { copyBtn.textContent = t('button.copyIdle'); }, 2000);
+                }
             }
 
             function openStremio() {
@@ -1086,10 +1587,24 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
                 var stremioUrl = httpUrl.replace("https://", "stremio://").replace("http://", "stremio://");
                 window.location.assign(stremioUrl);
             }
+
+            // Initialise sort order
+            var savedSort = ${(() => {
+                const sort = currentConfig.sort;
+                if (sort && Array.isArray(sort)) return JSON.stringify(sort);
+                if (sort && typeof sort === 'string') {
+                    try { return JSON.stringify(JSON.parse(sort)); } catch(e) {}
+                }
+                return 'null';
+            })()};
+            initSortRows(savedSort);
+            // Apply saved language on load
+            applyLang();
         </script>
     </body>
     </html>
     `;
+
     res.send(html);
 });
 
@@ -1144,6 +1659,42 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         return res.json({ streams: [], error: "Neplatná konfigurácia." });
     }
     
+    // Backward compatibility: map old config fields to new ones
+    // Old showUncached → new cachedOnly (inverted)
+    if (userConfig.showUncached !== undefined && userConfig.cachedOnly === undefined) {
+        userConfig.cachedOnly = !userConfig.showUncached;
+    }
+    // Old sizeOrder → new sort array
+    if (userConfig.sizeOrder && !userConfig.sort) {
+        if (userConfig.sizeOrder === 'asc') {
+            userConfig.sort = ['quality', 'size', 'seeds'];
+        } else {
+            userConfig.sort = ['cached', 'quality', 'seeds', 'size'];
+        }
+    }
+    // Old sortBy → new sort array
+    if (userConfig.sortBy && !userConfig.sort) {
+        if (userConfig.sortBy === 'quality') userConfig.sort = ['cached', 'quality', 'lang', 'seeds', 'size'];
+        else if (userConfig.sortBy === 'seeds') userConfig.sort = ['cached', 'seeds', 'quality', 'size'];
+        else if (userConfig.sortBy === 'size') userConfig.sort = ['cached', 'size', 'quality', 'seeds'];
+        else if (userConfig.sortBy === 'sizeAsc') userConfig.sort = ['cached', 'size', 'quality', 'seeds'];
+    }
+    // Old maxQuality → new res array
+    if (userConfig.maxQuality && !userConfig.res) {
+        const mq = parseInt(userConfig.maxQuality);
+        const allRes = ['2160p', '1080p', '720p', 'sd'];
+        if (mq >= 4) userConfig.res = allRes; // 4K = all
+        else if (mq === 3) userConfig.res = ['1080p', '720p', 'sd']; // 1080p max
+        else if (mq === 2) userConfig.res = ['720p', 'sd'];
+        else userConfig.res = ['sd'];
+    }
+    // Old language single string → new lang array
+    if (userConfig.language && !userConfig.lang) {
+        if (userConfig.language === 'all' || userConfig.language === '') userConfig.lang = ['sk', 'cz', 'en', 'multi'];
+        else if (userConfig.language === 'skcz') userConfig.lang = ['sk', 'cz'];
+        else userConfig.lang = [userConfig.language];
+    }
+
     const normalizedConfig = { uid: activeUid, pass: activePass, torbox: activeTorbox, tmdb: activeTmdb, tvdb: userConfig.tvdb, preferDub: activePreferDub };
     const userAxios = getFastAxios(normalizedConfig);
     console.log(`\n====== 🎬 Hľadám pre UID: ${normalizedConfig.uid} | id='${id}' ======`);
@@ -1311,8 +1862,12 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
                     behaviorHints: stream.behaviorHints,
                     _sortCached: jeCached ? 1 : 0,
                     _sortDub: stream.isDub ? 1 : 0,
+                    _sortDubLang: stream.isDub ? (stream.dubLang || '') : '',
+                    _sortHdr: stream._sortHdr || '',
+                    _sortSource: stream._sortSource || 'neznámy',
                     _sortQuality: getQualityRank(sortText),
-                    _sortSize: getSizeBytes(sortText)
+                    _sortSize: getSizeBytes(sortText),
+                    _sortSeeds: stream.seeds || 0
                 };
 
                 if (jeCached) {
@@ -1324,8 +1879,8 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
                 return finalStream;
             });
 
-            const showUncached = userConfig.showUncached !== undefined ? userConfig.showUncached : true;
-            if (!showUncached) {
+            const cachedOnly = userConfig.cachedOnly === true;
+            if (cachedOnly) {
                 streamy = streamy.filter(s => s._sortCached === 1);
             }
         }
@@ -1344,8 +1899,14 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
                     behaviorHints: stream.behaviorHints,
                     _sortCached: 0,
                     _sortDub: stream.isDub ? 1 : 0,
+                    _sortDubLang: stream.isDub ? (stream.dubLang || '') : '',
+                    _sortName: stream._sortName || '',
+                    _sortCategory: stream._sortCategory || '',
+                    _sortHdr: stream._sortHdr || '',
+                    _sortSource: stream._sortSource || 'neznámy',
                     _sortQuality: getQualityRank(sortText),
-                    _sortSize: getSizeBytes(sortText)
+                    _sortSize: getSizeBytes(sortText),
+                    _sortSeeds: stream.seeds || 0
                 };
             });
         }
@@ -1356,39 +1917,144 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             return res.json({ streams: [] });
         }
 
-        const sizeOrder = userConfig.sizeOrder || "desc";
-        const defaultQualityOrder = [4, 3, 2, 1, 0];
-        const qualityOrder = userConfig.qualityOrder || defaultQualityOrder;
+        // ── FILTROVANIE (Meteor-štýl) ──
 
-        streamy = streamy.sort((a, b) => {
-            if (b._sortCached !== a._sortCached) {
-                return b._sortCached - a._sortCached;
+        // 1. Cached Only filter
+        const cachedOnly = userConfig.cachedOnly === true;
+        if (cachedOnly) {
+            streamy = streamy.filter(s => s._sortCached === 1);
+        }
+
+        // 2. Resolution filter (chips: 2160p, 1080p, 720p, sd)
+        const userRes = userConfig.res;
+        if (userRes && Array.isArray(userRes) && userRes.length > 0 && userRes.length < 4) {
+            const allowedQualities = [];
+            if (userRes.includes('2160p')) allowedQualities.push(4);
+            if (userRes.includes('1080p')) allowedQualities.push(3);
+            if (userRes.includes('720p')) allowedQualities.push(2);
+            if (userRes.includes('sd')) allowedQualities.push(1);
+            if (allowedQualities.length > 0) {
+                streamy = streamy.filter(s => allowedQualities.includes(s._sortQuality));
             }
+        }
 
-            // Preferovať SK/CZ dabing ak je toggle zapnutý
-            if (userConfig.preferDub && b._sortDub !== a._sortDub) {
-                return b._sortDub - a._sortDub;
+        
+        // 2b. HDR/DV/HEVC filter (chips: hdr, dv, hevc, atmos)
+        const userHdr = userConfig.hdr;
+        if (userHdr && Array.isArray(userHdr) && userHdr.length > 0 && userHdr.length < 4) {
+            streamy = streamy.filter(s => {
+                const hdr = s._sortHdr || '';
+                if (!hdr) return false;
+                return userHdr.some(function(h) { return hdr.includes(h); });
+            });
+        }
+
+        // 2c. 18+ filter (chips: hide)
+        const userAdult = userConfig.adult;
+        if (userAdult && Array.isArray(userAdult) && userAdult.includes('hide')) {
+            streamy = streamy.filter(s => {
+                const name = (s._sortName || '').toLowerCase();
+                const cat = (s._sortCategory || '').toLowerCase();
+                const adultKeywords = ['erotick','porn','xxx','adult','18+','sex','onlyfans'];
+                if (cat.includes('erotick')) return false;
+                for (let ki = 0; ki < adultKeywords.length; ki++) {
+                    if (name.includes(adultKeywords[ki])) return false;
+                }
+                return true;
+            });
+        }
+
+        // 2d. Source type filter (chips: webdl, bluray, hdtv, dvdrip, webrip, hdrip, ppv, remux, cam)
+        const userSource = userConfig.source;
+        if (userSource && Array.isArray(userSource) && userSource.length > 0 && userSource.length < 8) {
+            streamy = streamy.filter(s => {
+                const src = (s._sortSource || 'neznámy').toLowerCase();
+                // Unknown source type always passes through
+                if (src === 'neznámy') return true;
+                return userSource.some(function(us) { return src.includes(us); });
+            });
+        }
+
+        // 3. Min seeds filter
+        const minSeedsVal = parseInt(userConfig.minSeeds || '0');
+        if (minSeedsVal > 0) {
+            streamy = streamy.filter(s => (s._sortSeeds || 0) >= minSeedsVal);
+        }
+
+        // 4. Max size filter (in GB)
+        const maxSizeVal = parseFloat(userConfig.maxSize || '0');
+        if (maxSizeVal > 0) {
+            const maxSizeBytes = maxSizeVal * 1024 * 1024 * 1024;
+            streamy = streamy.filter(s => s._sortSize > 0 && s._sortSize <= maxSizeBytes);
+        }
+
+        // 5. Language preference — iba priorita, nefiltruje
+        const userLangs = userConfig.lang;
+
+        // ── RADENIE (podľa používateľského sort order) ──
+        const sortOrder = userConfig.sort;
+        if (sortOrder && Array.isArray(sortOrder) && sortOrder.length > 0) {
+            streamy.sort((a, b) => {
+                for (let i = 0; i < sortOrder.length; i++) {
+                    const criterion = sortOrder[i];
+                    let cmp = 0;
+
+                    if (criterion === 'cached') {
+                        cmp = (b._sortCached || 0) - (a._sortCached || 0);
+                    } else if (criterion === 'quality') {
+                        cmp = (b._sortQuality || 0) - (a._sortQuality || 0);
+                    } else if (criterion === 'lang') {
+                        function langScore(s) {
+                            if (!userLangs || !Array.isArray(userLangs) || userLangs.length === 0 || userLangs.length >= 4) return 0;
+                            const dubLang = s._sortDubLang || '';
+                            const isDub = s._sortDub === 1;
+                            if (userLangs.includes('multi')) return 1;
+                            if (userLangs.includes('sk') && (dubLang === 'sk' || dubLang === 'cz')) return 1;
+                            if (userLangs.includes('cz') && (dubLang === 'cz' || dubLang === 'sk')) return 1;
+                            if (userLangs.includes('en') && (!isDub || dubLang === 'en')) return 1;
+                            return 0;
+                        }
+                        cmp = langScore(b) - langScore(a);
+                    } else if (criterion === 'seeds') {
+                        cmp = (b._sortSeeds || 0) - (a._sortSeeds || 0);
+                    } else if (criterion === 'size') {
+                        cmp = (b._sortSize || 0) - (a._sortSize || 0);
+                    }
+
+                    if (cmp !== 0) return cmp;
+                }
+                return 0;
+            });
+        }
+
+        // 6. Max per resolution limit (po sorte, pred cleanup)
+        const maxPerResVal = parseInt(userConfig.maxPerRes || '0');
+        if (maxPerResVal > 0) {
+            const grouped = {};
+            for (let i = 0; i < streamy.length; i++) {
+                const s = streamy[i];
+                const q = s._sortQuality || 0;
+                if (!grouped[q]) grouped[q] = [];
+                if (grouped[q].length < maxPerResVal) {
+                    grouped[q].push(s);
+                }
             }
-
-            const indexA = qualityOrder.indexOf(a._sortQuality);
-            const indexB = qualityOrder.indexOf(b._sortQuality);
-
-            const rankA = indexA === -1 ? 99 : indexA;
-            const rankB = indexB === -1 ? 99 : indexB;
-
-            if (rankA !== rankB) {
-                return rankA - rankB;
+            streamy = [];
+            const qualityOrder = [4, 3, 2, 1, 0];
+            for (let qi = 0; qi < qualityOrder.length; qi++) {
+                const items = grouped[qualityOrder[qi]];
+                if (items) streamy = streamy.concat(items);
             }
-
-            if (sizeOrder === "asc") {
-                return a._sortSize - b._sortSize;
-            } else {
-                return b._sortSize - a._sortSize;
-            }
-        });
+        }
 
         // Odstrániť interné _sort polia
-        streamy = streamy.map(({ _sortCached, _sortDub, _sortQuality, _sortSize, ...rest }) => rest);
+        streamy = streamy.map(({ _sortCached, _sortDub, _sortDubLang, _sortName, _sortCategory, _sortHdr, _sortSource, _sortQuality, _sortSize, _sortSeeds, ...rest }) => rest);
+
+        // 7. Max results limit
+        const maxResultsVal = parseInt(userConfig.maxResults || '0');
+        if (maxResultsVal > 0 && streamy.length > maxResultsVal) {
+            streamy = streamy.slice(0, maxResultsVal);
+        }
 
         const trvanie = Date.now() - startCas;
         logSuccess(`Stream request finished in ${trvanie}ms. Returning ${streamy.length} streams to Stremio.`);

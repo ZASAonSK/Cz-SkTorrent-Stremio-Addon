@@ -1113,7 +1113,7 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
                 <div class="section-desc" data-i18n="desc.filters">Obmedz kvalitu, veľkosť a počet výsledkov</div>
 
                 <div class="checkbox-row" onclick="toggleCheckbox('cachedOnly', event)">
-                    <input type="checkbox" id="cachedOnly" ${getCheck('cachedOnly', true)}>
+                    <input type="checkbox" id="cachedOnly" ${getCheck('cachedOnly', false)}>
                     <span class="label-text" data-i18n="checkbox.cached">Cached Only</span>
                     <span class="label-desc" data-i18n="checkbox.cached.desc">Len TorBox cachované streamy</span>
                 </div>

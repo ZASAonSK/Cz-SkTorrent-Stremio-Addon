@@ -13,13 +13,12 @@ Addon si môžeš nainštalovať a nakonfigurovať na tejto verejne bežiacej in
 ## ⭐ Hlavné funkcie a vlastnosti
 
 *   ⚡ **Podpora TorBox (Debrid/Cache)**: Ak vložíš svoj TorBox API kľúč, addon automaticky overí, či je torrent už stiahnutý na serveroch TorBoxu. Ak áno, streamuje sa okamžite priamo z ich serverov (označené ako `[TB ⚡]`).
-*   🔍 **Smart vyhľadávanie cez ČSFD**: Addon obsahuje vlastný scraper, ktorý dokáže nájsť presný film alebo seriál na základe ČSFD ID. Prehľadáva až 20 stránok výsledkov pre zaručené nájdenie aj starších epizód.
+*   🔍 **Vyhľadávanie cez ČSFD a viacero názvov**: Addon automaticky scrapuje ČSFD pre získanie presného českého/slovenského názvu filmu alebo seriálu. Ak nájde ČSFD odkaz, prehľadáva SKTorrent až do 20 stránok výsledkov pre istotu nájdenia aj starších epizód. Doplnkovo sťahuje názvy z TMDB (originálne aj preložené do CS/SK/EN) a TVDB, čím maximalizuje šancu na zhodu.
 *   🧠 **Pokročilý Regex pre SK/CZ seriály**: Rozpoznáva obrovské množstvo našských formátov seriálov (napr. `S01E01`, `1x01`, `1. - 4. serie`, `1. Epizoda`, `105.Epizóda`, `Pack`, `Komplet`). Automaticky extrahuje správny video súbor aj z veľkých gigabajtových packov.
 *   🎥 **Detailné informácie o streame**: Priamo v Stremio vidíš krásne naformátované dáta:
     *   **Kvalita & Formát:** 4K, 1080p, HDR, Dolby Vision, HEVC, H.264, Atmos...
     *   **Jazyk (Vlajky):** 🇸🇰 🇨🇿 🇬🇧 🇺🇸 na základe analýzy názvu.
     *   **Veľkosť:** Skutočná veľkosť daného video súboru + veľkosť celého torrentu.
-*   🌐 **TMDB a Cinemeta integrácia**: Hľadá podľa pôvodného aj preloženého (českého/slovenského) názvu pre maximálnu presnosť výsledkov.
 
 ---
 

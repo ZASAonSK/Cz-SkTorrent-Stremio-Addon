@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "axios": "^1.6.0",
+    "bencode": "^2.0.0",
     "bncode": "^0.5.3",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",

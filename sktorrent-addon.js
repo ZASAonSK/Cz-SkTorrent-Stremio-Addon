@@ -1995,9 +1995,9 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
                 const proxyEpizoda = epizoda || 0;
                 const sortText = `${staraKategoria} ${stream.title || ""}`;
 
-                // Prefix podľa RD stavu
+                // Prefix podľa stavu (❌ len pre Real-Debrid)
                 let streamPrefix;
-                if (jeRdBlocked) {
+                if (jeRdBlocked && debridProvider === 'realdebrid') {
                     streamPrefix = `[${providerPrefix} ❌]`;
                 } else if (jeCached) {
                     streamPrefix = `[${providerPrefix} ⚡]`;

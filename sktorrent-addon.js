@@ -1621,15 +1621,13 @@ const handleManifest = (req, res) => {
         'Surrogate-Control': 'no-store'
     });
 
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-
     res.json({
         id: "org.stremio.sktorrent.addon", 
         version: "1.7.0",
         name: "TorrentSK",
         description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
-        logo: `${baseUrl}/logo.png`,
-        icon: `${baseUrl}/logo.png`,
+        logo: `${PUBLIC_URL}/logo.png`,
+        icon: `${PUBLIC_URL}/logo.png`,
         types: ["movie", "series"],
         catalogs: [],
         resources: ["stream"],

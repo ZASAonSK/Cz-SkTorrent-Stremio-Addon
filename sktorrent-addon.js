@@ -178,29 +178,52 @@ async function overitRealDebridCache(infoHashes, rdKey) {
     const cacheMap = {};
 
     logApi(`Checking Real-Debrid cache for ${unikatneHashe.length} hashes`);
-    
-    const limit = pLimit(5);
-    await Promise.all(unikatneHashe.map(hash =>
-        limit(async () => {
-            try {
-                const res = await axios.get(`${RD_API_BASE}/torrents/instantAvailability/${hash}`, {
-                    headers: { "Authorization": `Bearer ${rdKey}` },
-                    timeout: 8000
-                });
-                // RD returns { hash: { rd: [{ filename, filesize }] } } if cached, or empty object
-                if (res.data && res.data[hash] && res.data[hash].rd && Array.isArray(res.data[hash].rd) && res.data[hash].rd.length > 0) {
-                    cacheMap[hash] = true;
-                }
-            } catch (error) {
-                // 404 = not cached, other errors log
-                if (error.response && error.response.status !== 404) {
-                    logError(`Real-Debrid cache check failed for ${hash}`, error);
+
+    // RD API supports batching: /instantAvailability/hash1/hash2/hash3
+    try {
+        const url = `${RD_API_BASE}/torrents/instantAvailability/${unikatneHashe.join('/')}`;
+        logApi(`RD cache URL: ${url.substring(0, 200)}...`);
+        
+        const res = await axios.get(url, {
+            headers: { "Authorization": `Bearer ${rdKey}` },
+            timeout: 15000
+        });
+
+        // Schema: { "hash": { "rd": [ { fileId: { filename, filesize } } ] } }
+        // If empty object {}, nothing is cached
+        if (res.data && typeof res.data === 'object') {
+            const responseKeys = Object.keys(res.data);
+            logApi(`RD instantAvailability returned ${responseKeys.length} hashes`);
+            
+            for (const responseHash of responseKeys) {
+                const h = responseHash.toLowerCase();
+                const hosterData = res.data[responseHash];
+                
+                // Check if "rd" (Real-Debrid) hoster has files
+                if (hosterData && hosterData.rd && Array.isArray(hosterData.rd) && hosterData.rd.length > 0) {
+                    const fileCount = Object.keys(hosterData.rd[0] || {}).length;
+                    logSuccess(`RD cached hash: ${h.substring(0, 12)}... (${fileCount} files)`);
+                    cacheMap[h] = true;
+                } else {
+                    logCache(`RD NOT cached: ${h.substring(0, 12)}...`);
                 }
             }
-        })
-    ));
+        } else {
+            logApi(`RD instantAvailability returned non-object: ${typeof res.data}`);
+        }
+    } catch (error) {
+        if (error.response) {
+            if (error.response.status === 404) {
+                logCache(`RD cache: all ${unikatneHashe.length} hashes not found (404)`);
+            } else {
+                logError(`Real-Debrid cache check failed (HTTP ${error.response.status})`, error);
+            }
+        } else {
+            logError(`Real-Debrid cache check failed (network error)`, error);
+        }
+    }
 
-    logSuccess(`Real-Debrid cache check complete. Found ${Object.keys(cacheMap).length} cached items.`);
+    logSuccess(`Real-Debrid cache check complete. Found ${Object.keys(cacheMap).length}/${unikatneHashe.length} cached items.`);
     return cacheMap;
 }
 
@@ -1137,7 +1160,7 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                 <div class="field" id="realdebridField" style="display:${currentConfig.debridProvider === 'realdebrid' ? '' : 'none'};">
                     <label data-i18n="label.realdebrid">Real-Debrid API kľúč</label>
                     <input type="text" id="realdebrid" data-i18n-placeholder="realdebrid.placeholder" placeholder="Real-Debrid API token" value="${getVal('realdebrid')}">
-                    <div style="font-size:11px;color:#666;margin-top:2px;"><a href="https://real-debrid.com/apitoken" target="_blank" rel="noopener" style="color:#8A5A9E;text-decoration:none;" data-i18n-link="realdebrid.help">🔗 real-debrid.com/apitoken</a></div>
+                    <div style="font-size:11px;color:#666;margin-top:2px;"><a href="https://real-debrid.com/devices" target="_blank" rel="noopener" style="color:#8A5A9E;text-decoration:none;" data-i18n-link="realdebrid.help">🔗 real-debrid.com/devices</a></div>
                 </div>
                 <div class="field">
                     <label><span data-i18n="label.tmdb">TMDB API kľúč</span> <span style="color:#666;font-weight:400;" data-i18n-optional="label.tmdb.optional">(voliteľné)</span></label>
@@ -1301,7 +1324,7 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                     'debrid.p2p': 'P2P (žiadny debrid)',
                     'label.realdebrid': 'Real-Debrid API kľúč',
                     'realdebrid.placeholder': 'Real-Debrid API token',
-                    'realdebrid.help': '🔗 real-debrid.com/apitoken',
+                    'realdebrid.help': '🔗 real-debrid.com/devices',
                     'label.torbox': 'TorBox API kľúč',
                     'torbox.help': '🔗 https://torbox.app/settings?section=account',
                     'torbox.placeholder': 'TorBox token',
@@ -1374,7 +1397,7 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                     'debrid.p2p': 'P2P (no debrid)',
                     'label.realdebrid': 'Real-Debrid API Key',
                     'realdebrid.placeholder': 'Real-Debrid API token',
-                    'realdebrid.help': '🔗 real-debrid.com/apitoken',
+                    'realdebrid.help': '🔗 real-debrid.com/devices',
                     'label.torbox': 'TorBox API Key',
                     'torbox.help': '🔗 https://torbox.app/settings?section=account',
                     'torbox.placeholder': 'TorBox token',

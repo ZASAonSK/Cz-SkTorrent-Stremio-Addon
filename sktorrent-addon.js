@@ -164,6 +164,56 @@ async function overitTorboxCache(infoHashes, torboxKey) {
 }
 
 // ===================================================================
+// REAL-DEBRID FUNKCIE
+// ===================================================================
+const RD_API_BASE = "https://api.real-debrid.com/rest/1.0";
+
+async function overitRealDebridCache(infoHashes, rdKey) {
+    if (!rdKey || !infoHashes || infoHashes.length === 0) return {};
+    
+    const platneHashe = infoHashes.filter(h => h && typeof h === 'string');
+    if (platneHashe.length === 0) return {};
+
+    const unikatneHashe = [...new Set(platneHashe)].map(h => h.toLowerCase());
+    const cacheMap = {};
+
+    logApi(`Checking Real-Debrid cache for ${unikatneHashe.length} hashes`);
+    
+    const limit = pLimit(5);
+    await Promise.all(unikatneHashe.map(hash =>
+        limit(async () => {
+            try {
+                const res = await axios.get(`${RD_API_BASE}/torrents/instantAvailability/${hash}`, {
+                    headers: { "Authorization": `Bearer ${rdKey}` },
+                    timeout: 8000
+                });
+                // RD returns { hash: { rd: [{ filename, filesize }] } } if cached, or empty object
+                if (res.data && res.data[hash] && res.data[hash].rd && Array.isArray(res.data[hash].rd) && res.data[hash].rd.length > 0) {
+                    cacheMap[hash] = true;
+                }
+            } catch (error) {
+                // 404 = not cached, other errors log
+                if (error.response && error.response.status !== 404) {
+                    logError(`Real-Debrid cache check failed for ${hash}`, error);
+                }
+            }
+        })
+    ));
+
+    logSuccess(`Real-Debrid cache check complete. Found ${Object.keys(cacheMap).length} cached items.`);
+    return cacheMap;
+}
+
+async function overitDebridCache(infoHashes, apiKey, provider) {
+    if (provider === 'torbox') {
+        return overitTorboxCache(infoHashes, apiKey);
+    } else if (provider === 'realdebrid') {
+        return overitRealDebridCache(infoHashes, apiKey);
+    }
+    return {};
+}
+
+// ===================================================================
 // ZÍSKANIE ČSFD LINKU VLASTNÝM RIEŠENÍM (Axios + Cheerio)
 // ===================================================================
 async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
@@ -1071,10 +1121,23 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                     <input type="password" id="pass" data-i18n-placeholder="pass.placeholder" placeholder="Tvoj pass" value="${getVal('pass')}">
                     <div style="font-size:11px;color:#666;margin-top:2px;" data-i18n="pass.help">ℹ️ Nájdeš v cookies po prihlásení na sktorrent.eu</div>
                 </div>
-                <div class="field">
+                <div class="field" id="debridServiceField">
+                    <label data-i18n="label.debrid">Debrid služba</label>
+                    <select id="debridProvider" onchange="toggleDebridFields()">
+                        <option value="" ${getSelect('debridProvider','','') || (!currentConfig.debridProvider && !currentConfig.torbox ? 'selected' : '')} data-i18n="debrid.p2p">P2P (žiadny debrid)</option>
+                        <option value="torbox" ${getSelect('debridProvider','torbox','') || (currentConfig.torbox && !currentConfig.debridProvider ? 'selected' : '')}>TorBox</option>
+                        <option value="realdebrid" ${getSelect('debridProvider','realdebrid','')}>Real-Debrid</option>
+                    </select>
+                </div>
+                <div class="field" id="torboxField" style="display:${currentConfig.debridProvider === 'torbox' || (!currentConfig.debridProvider && currentConfig.torbox) ? '' : 'none'};">
                     <label data-i18n="label.torbox">TorBox API kľúč</label>
                     <input type="text" id="torbox" data-i18n-placeholder="torbox.placeholder" placeholder="TorBox token" value="${getVal('torbox')}">
                     <div style="font-size:11px;color:#666;margin-top:2px;"><a href="https://torbox.app/settings?section=account" target="_blank" rel="noopener" style="color:#8A5A9E;text-decoration:none;" data-i18n-link="torbox.help">🔗 torbox.app/settings?section=account</a></div>
+                </div>
+                <div class="field" id="realdebridField" style="display:${currentConfig.debridProvider === 'realdebrid' ? '' : 'none'};">
+                    <label data-i18n="label.realdebrid">Real-Debrid API kľúč</label>
+                    <input type="text" id="realdebrid" data-i18n-placeholder="realdebrid.placeholder" placeholder="Real-Debrid API token" value="${getVal('realdebrid')}">
+                    <div style="font-size:11px;color:#666;margin-top:2px;"><a href="https://real-debrid.com/apitoken" target="_blank" rel="noopener" style="color:#8A5A9E;text-decoration:none;" data-i18n-link="realdebrid.help">🔗 real-debrid.com/apitoken</a></div>
                 </div>
                 <div class="field">
                     <label><span data-i18n="label.tmdb">TMDB API kľúč</span> <span style="color:#666;font-weight:400;" data-i18n-optional="label.tmdb.optional">(voliteľné)</span></label>
@@ -1234,6 +1297,11 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                     'label.pass': 'SKTorrent pass',
                     'pass.help': 'ℹ️ Nájdeš v cookies po prihlásení na sktorrent.eu',
                     'pass.placeholder': 'Tvoj pass',
+                    'label.debrid': 'Debrid služba',
+                    'debrid.p2p': 'P2P (žiadny debrid)',
+                    'label.realdebrid': 'Real-Debrid API kľúč',
+                    'realdebrid.placeholder': 'Real-Debrid API token',
+                    'realdebrid.help': '🔗 real-debrid.com/apitoken',
                     'label.torbox': 'TorBox API kľúč',
                     'torbox.help': '🔗 https://torbox.app/settings?section=account',
                     'torbox.placeholder': 'TorBox token',
@@ -1302,6 +1370,11 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                     'label.pass': 'SKTorrent pass',
                     'pass.help': 'ℹ️ Found in cookies after logging in at sktorrent.eu',
                     'pass.placeholder': 'Your pass',
+                    'label.debrid': 'Debrid Service',
+                    'debrid.p2p': 'P2P (no debrid)',
+                    'label.realdebrid': 'Real-Debrid API Key',
+                    'realdebrid.placeholder': 'Real-Debrid API token',
+                    'realdebrid.help': '🔗 real-debrid.com/apitoken',
                     'label.torbox': 'TorBox API Key',
                     'torbox.help': '🔗 https://torbox.app/settings?section=account',
                     'torbox.placeholder': 'TorBox token',
@@ -1530,7 +1603,9 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                 var config = {
                     uid: document.getElementById('uid').value,
                     pass: document.getElementById('pass').value,
+                    debridProvider: document.getElementById('debridProvider').value,
                     torbox: document.getElementById('torbox').value,
+                    realdebrid: document.getElementById('realdebrid').value,
                     tmdb: document.getElementById('tmdb').value,
                     tvdb: document.getElementById('tvdb').value,
                     lang: getActiveChips('#langChips .chip'),
@@ -1592,6 +1667,14 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                 window.location.assign(stremioUrl);
             }
 
+            function toggleDebridFields() {
+                var provider = document.getElementById('debridProvider').value;
+                var torboxField = document.getElementById('torboxField');
+                var realdebridField = document.getElementById('realdebridField');
+                if (torboxField) torboxField.style.display = (provider === 'torbox') ? '' : 'none';
+                if (realdebridField) realdebridField.style.display = (provider === 'realdebrid') ? '' : 'none';
+            }
+
             // Initialise sort order
             var savedSort = ${(() => {
                 const sort = currentConfig.sort;
@@ -1602,6 +1685,8 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                 return 'null';
             })()};
             initSortRows(savedSort);
+            // Apply debrid field visibility on load
+            toggleDebridFields();
             // Apply saved language on load
             applyLang();
         </script>
@@ -1847,22 +1932,28 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         torrenty.map(t => execLimit(() => vytvoritStream(t, seria, epizoda, userAxios, metaInfo, userConfig)))
     )).filter(Boolean);
 
-        // ── TORBOX REŽIM ──
-        if (userConfig.torbox) {
-            logInfo("TorBox enabled. Preparing streams for TorBox playback...");
+        // ── DEBRID REŽIM (TorBox / Real-Debrid) ──
+        const debridProvider = userConfig.debridProvider || (userConfig.torbox ? 'torbox' : '');
+        const debridApiKey = debridProvider === 'torbox' ? userConfig.torbox : (debridProvider === 'realdebrid' ? userConfig.realdebrid : null);
+
+        if (debridProvider && debridApiKey) {
+            const providerLabel = debridProvider === 'torbox' ? 'TorBox' : 'Real-Debrid';
+            const providerPrefix = debridProvider === 'torbox' ? 'TB' : 'RD';
+            logInfo(`${providerLabel} enabled. Preparing streams for ${providerLabel} playback...`);
+            
             const hasheKONTROLA = streamy.map(s => s.infoHash).filter(Boolean);
-            const torboxCache = await overitTorboxCache(hasheKONTROLA, userConfig.torbox);
+            const debridCache = await overitDebridCache(hasheKONTROLA, debridApiKey, debridProvider);
 
             streamy = streamy.map(stream => {
                 const hash = stream.infoHash.toLowerCase();
-                const jeCached = torboxCache[hash] === true;
+                const jeCached = debridCache[hash] === true;
                 const staraKategoria = stream.name.split("\n")[1] || "";
                 const proxySeria = seria || 0;
                 const proxyEpizoda = epizoda || 0;
                 const sortText = `${staraKategoria} ${stream.title || ""}`;
 
                 let finalStream = {
-                    name: jeCached ? `[TB ⚡] SKT\n${staraKategoria}` : `[TB ⏳] SKT\n${staraKategoria}`,
+                    name: jeCached ? `[${providerPrefix} ⚡] SKT\n${staraKategoria}` : `[${providerPrefix} ⏳] SKT\n${staraKategoria}`,
                     title: stream.title,
                     type: vlastnyTyp,
                     behaviorHints: stream.behaviorHints,
@@ -1891,8 +1982,8 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             }
         }
 
-        // ── P2P REŽIM (bez TorBoxu) ──
-        if (!userConfig.torbox && streamy.length > 0) {
+        // ── P2P REŽIM (bez debridu) ──
+        if ((!debridProvider || !debridApiKey) && streamy.length > 0) {
             logInfo("TorBox not configured. Using P2P mode (WebTorrent).");
             streamy = streamy.map(stream => {
                 const staraKategoria = stream.name.split("\n")[1] || "";
@@ -2065,8 +2156,8 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         const trvanie = Date.now() - startCas;
         logSuccess(`Stream request finished in ${trvanie}ms. Returning ${streamy.length} streams to Stremio.`);
 
-        // Cache-Control len pre TorBox režim
-        if (userConfig.torbox) {
+        // Cache-Control len pre debrid režim
+        if (debridProvider && debridApiKey) {
             const maUncachedStreamy = streamy.some(s => s.name && s.name.includes("⏳"));
             const cacheMaxAge = maUncachedStreamy ? 60 : 3600;
             res.setHeader('Cache-Control', `max-age=${cacheMaxAge}, stale-while-revalidate=${cacheMaxAge}, stale-if-error=${cacheMaxAge}`);
@@ -2082,14 +2173,29 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 app.get('/:config/play/:hash/:seria/:epizoda/:fileName', async (req, res) => {
     const { hash, seria, epizoda, config } = req.params;
     const decodedFileName = decodeURIComponent(req.params.fileName || "").replace(/\|/g, "/");
-    logApi(`TorBox Play Request: Hash: ${hash} | S${seria}E${epizoda} | File: ${decodedFileName}`);
+    logApi(`Play Request: Hash: ${hash} | S${seria}E${epizoda} | File: ${decodedFileName}`);
 
     const userConfig = decodeConfig(config);
-    if (!userConfig || !userConfig.torbox) {
-        return res.status(400).send("Chýba TorBox kľúč.");
-    }
-    const TORBOX_API_KEY = userConfig.torbox;
+    if (!userConfig) return res.status(400).send("Chyba konfigurácie.");
 
+    const debridProvider = userConfig.debridProvider || (userConfig.torbox ? 'torbox' : '');
+    const debridApiKey = debridProvider === 'torbox' ? userConfig.torbox : (debridProvider === 'realdebrid' ? userConfig.realdebrid : null);
+
+    if (!debridApiKey) {
+        return res.status(400).send("Chýba debrid API kľúč.");
+    }
+
+    if (debridProvider === 'torbox') {
+        return handleTorboxPlay(req, res, hash, seria, epizoda, decodedFileName, userConfig, debridApiKey);
+    } else if (debridProvider === 'realdebrid') {
+        return handleRealDebridPlay(req, res, hash, decodedFileName, debridApiKey);
+    }
+
+    return res.status(400).send("Neznámy debrid provider.");
+});
+
+async function handleTorboxPlay(req, res, hash, seria, epizoda, decodedFileName, userConfig, TORBOX_API_KEY) {
+    logApi(`TorBox Play Request: Hash: ${hash} | S${seria}E${epizoda} | File: ${decodedFileName}`);
     try {
         const tbTorrentsRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
             headers: { Authorization: `Bearer ${TORBOX_API_KEY}` }
@@ -2213,7 +2319,120 @@ if (directLink) {
     logError("TorBox play proxy error", err);
     res.status(500).send("Chyba proxy servera.");
 }
-});
+}
+
+async function handleRealDebridPlay(req, res, hash, decodedFileName, RD_API_KEY) {
+    logApi(`Real-Debrid Play Request: Hash: ${hash} | File: ${decodedFileName}`);
+    try {
+        // 1. Try to find torrent in RD account
+        let torrentId = null;
+        let rdTorrentInfo = null;
+
+        const listRes = await axios.get(`${RD_API_BASE}/torrents`, {
+            params: { limit: 100 },
+            headers: { "Authorization": `Bearer ${RD_API_KEY}` },
+            timeout: 10000
+        });
+
+        if (listRes.data && Array.isArray(listRes.data)) {
+            const najdeny = listRes.data.find(t => t.hash && t.hash.toLowerCase() === hash.toLowerCase());
+            if (najdeny) {
+                torrentId = najdeny.id;
+            }
+        }
+
+        // 2. If not found, add magnet (cached = instant on RD)
+        if (!torrentId) {
+            const magnetUri = `magnet:?xt=urn:btih:${hash}`;
+            const addRes = await axios.post(`${RD_API_BASE}/torrents/addMagnet`, 
+                `magnet=${encodeURIComponent(magnetUri)}`,
+                {
+                    headers: { 
+                        "Authorization": `Bearer ${RD_API_KEY}`,
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    timeout: 15000
+                }
+            );
+            torrentId = addRes.data && addRes.data.id;
+            
+            if (torrentId) {
+                // Wait briefly for RD to process (cached = instant)
+                await new Promise(r => setTimeout(r, 3000));
+            }
+        }
+
+        if (!torrentId) {
+            return res.status(404).send("Real-Debrid nenašiel torrent.");
+        }
+
+        // 3. Get torrent info for file list
+        const infoRes = await axios.get(`${RD_API_BASE}/torrents/info/${torrentId}`, {
+            headers: { "Authorization": `Bearer ${RD_API_KEY}` },
+            timeout: 10000
+        });
+
+        rdTorrentInfo = infoRes.data;
+        if (!rdTorrentInfo || !rdTorrentInfo.files || rdTorrentInfo.files.length === 0) {
+            return res.status(404).send("Real-Debrid torrent nemá súbory.");
+        }
+
+        // 4. Find matching file
+        const videoFiles = rdTorrentInfo.files.filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.path || f.name || ''));
+        let selectedFile = null;
+
+        if (decodedFileName) {
+            selectedFile = videoFiles.find(f =>
+                (f.path || f.name) === decodedFileName ||
+                (f.path || f.name).endsWith(decodedFileName) ||
+                decodedFileName.endsWith(f.path || f.name) ||
+                (f.path || f.name).split('/').pop() === decodedFileName.split('/').pop()
+            );
+        }
+
+        if (!selectedFile && videoFiles.length === 1) {
+            selectedFile = videoFiles[0];
+        }
+
+        if (!selectedFile && videoFiles.length > 0) {
+            selectedFile = videoFiles[0];
+            logWarn(`[RD PROXY] Nenašiel som presný súbor, púšťam prvý: ${selectedFile.path || selectedFile.name}`);
+        }
+
+        if (!selectedFile) {
+            return res.status(404).send("RD nenašiel vhodný video súbor.");
+        }
+
+        // 5. Unrestrict the download link
+        const downloadLink = selectedFile.link || selectedFile.download;
+        if (!downloadLink) {
+            return res.status(404).send("RD súbor nemá download link.");
+        }
+
+        const unrestrictRes = await axios.post(`${RD_API_BASE}/unrestrict/link`,
+            `link=${encodeURIComponent(downloadLink)}`,
+            {
+                headers: {
+                    "Authorization": `Bearer ${RD_API_KEY}`,
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
+                timeout: 15000
+            }
+        );
+
+        const directUrl = unrestrictRes.data && unrestrictRes.data.download;
+        if (directUrl) {
+            logSuccess(`[RD PROXY] Redirectujem na RD CDN URL`);
+            res.redirect(302, directUrl);
+        } else {
+            res.status(500).send("RD nevrátil direct URL.");
+        }
+    } catch (err) {
+        logError("Real-Debrid play error", err);
+        res.status(500).send("Chyba Real-Debrid proxy.");
+    }
+}
+
 
 
 app.get("/:config/download/:hash/:sktId", async (req, res) => {
@@ -2221,30 +2440,43 @@ app.get("/:config/download/:hash/:sktId", async (req, res) => {
     
     const userConfig = decodeConfig(config);
     if (!userConfig || !userConfig.uid || !userConfig.pass) return res.status(400).send("Chyba Configu");
-    if (!userConfig.torbox) return res.status(400).send("Chyba Torbox Key");
 
-    const TORBOX_API_KEY = userConfig.torbox;
+    const debridProvider = userConfig.debridProvider || (userConfig.torbox ? 'torbox' : '');
+    const debridApiKey = debridProvider === 'torbox' ? userConfig.torbox : (debridProvider === 'realdebrid' ? userConfig.realdebrid : null);
+
+    if (!debridApiKey) return res.status(400).send("Chýba debrid API kľúč.");
+
     const userAxios = getFastAxios(userConfig);
 
     try {
         const torrentUrl = `${BASE_URL}/torrent/download.php?id=${sktId}`;
         const torrentBuffer = await stiahnutSurovyTorrent(torrentUrl, userAxios);
-
         if (!torrentBuffer) return res.status(500).send("Nepodarilo sa stiahnuť .torrent súbor.");
 
-        const formData = new FormData();
-        formData.append("file", torrentBuffer, { filename: `${hash}.torrent`, contentType: "application/x-bittorrent" });
+        if (debridProvider === 'torbox') {
+            const formData = new FormData();
+            formData.append("file", torrentBuffer, { filename: `${hash}.torrent`, contentType: "application/x-bittorrent" });
 
-        await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", formData, {
-            headers: { "Authorization": `Bearer ${TORBOX_API_KEY}`, ...formData.getHeaders() },
-            timeout: 15000
-        });
+            await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", formData, {
+                headers: { "Authorization": `Bearer ${debridApiKey}`, ...formData.getHeaders() },
+                timeout: 15000
+            });
+        } else if (debridProvider === 'realdebrid') {
+            // Upload .torrent file buffer to RD as base64
+            const base64Torrent = torrentBuffer.toString('base64');
+            const formData = new FormData();
+            formData.append("file", torrentBuffer, { filename: `${hash}.torrent`, contentType: "application/x-bittorrent" });
 
+            await axios.post(`${RD_API_BASE}/torrents/addTorrent`, formData, {
+                headers: { "Authorization": `Bearer ${debridApiKey}`, ...formData.getHeaders() },
+                timeout: 30000
+            });
+        }
 
         res.redirect(302, `/info-video`);
     } catch (err) {
-        logError("TorBox API download/upload error", err);
-        res.status(500).send("Chyba API stahovania TorBox.");
+        logError("Debrid API download/upload error", err);
+        res.status(500).send("Chyba API sťahovania debrid služby.");
     }
 });
 

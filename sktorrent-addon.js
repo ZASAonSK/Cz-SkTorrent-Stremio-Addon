@@ -168,6 +168,22 @@ async function overitTorboxCache(infoHashes, torboxKey) {
 // ===================================================================
 const STREMTHRU_URL = "https://stremthru.13377001.xyz";
 
+// Zoznam patternov, ktore Real-Debrid blokuje (451 infringing_file)
+const RD_BLOCKED_PATTERNS = [
+    'bdrip', 'bd-rip', 'bd remux',
+    'web-dl', 'webdl', 'web.dl',
+    'webrip', 'web-rip', 'web.rip',
+    'hdrip', 'hd-rip', 'hd.rip',
+    'dvdrip', 'dvd-rip', 'dvd.rip',
+    'rarbg', 'yts', 'eztv', 'tgx', 'amzn'
+];
+
+function jeRDNazovBlokovany(nazov) {
+    if (!nazov) return false;
+    const lower = nazov.toLowerCase();
+    return RD_BLOCKED_PATTERNS.some(p => lower.includes(p));
+}
+
 async function overitRealDebridCache(infoHashes, rdKey) {
     if (!rdKey || !infoHashes || infoHashes.length === 0) return {};
     
@@ -974,6 +990,10 @@ if (videoSubory.length === 1) {
     let cistyNazovSuboru = povodnySubor.split('/').pop().split('\\').pop();
     cistyNazovSuboru = cistyNazovSuboru.replace(/[^a-zA-Z0-9.\-]/g, '_');
 
+    // Zistenie či je názov blokovaný Real-Debridom (451)
+    const kontrolaNazvov = [cistyNazov, najdenyNazovSuboru || ''].filter(Boolean).join(' ');
+    const jeRdBlokovany = jeRDNazovBlokovany(kontrolaNazvov);
+
     // --- FINÁLNE TVORENIE OBJEKTU
     let streamObj = {
         name: `SKT\n${t.category.toUpperCase()}`,
@@ -989,6 +1009,7 @@ if (videoSubory.length === 1) {
         seeds: t.seeds,
         _sortHdr: hdrTag,
         _sortSource: sourceTag,
+        _sortRdBlocked: jeRdBlokovany ? 1 : 0,
         dubLang: jeSKCZ ? (langMatch.find(function(l) { return /^(CZ|SK)$/i.test(l); }) || '').toLowerCase() : ''
     };
 
@@ -1968,17 +1989,29 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             streamy = streamy.map(stream => {
                 const hash = stream.infoHash.toLowerCase();
                 const jeCached = debridCache[hash] === true;
+                const jeRdBlocked = stream._sortRdBlocked === 1;
                 const staraKategoria = stream.name.split("\n")[1] || "";
                 const proxySeria = seria || 0;
                 const proxyEpizoda = epizoda || 0;
                 const sortText = `${staraKategoria} ${stream.title || ""}`;
 
+                // Prefix podľa RD stavu
+                let streamPrefix;
+                if (jeRdBlocked) {
+                    streamPrefix = `[${providerPrefix} ❌]`;
+                } else if (jeCached) {
+                    streamPrefix = `[${providerPrefix} ⚡]`;
+                } else {
+                    streamPrefix = `[${providerPrefix} ⏳]`;
+                }
+
                 let finalStream = {
-                    name: jeCached ? `[${providerPrefix} ⚡] SKT\n${staraKategoria}` : `[${providerPrefix} ⏳] SKT\n${staraKategoria}`,
+                    name: `${streamPrefix} SKT\n${staraKategoria}`,
                     title: stream.title,
                     type: vlastnyTyp,
                     behaviorHints: stream.behaviorHints,
                     _sortCached: jeCached ? 1 : 0,
+                    _sortRdBlocked: jeRdBlocked ? 1 : 0,
                     _sortDub: stream.isDub ? 1 : 0,
                     _sortDubLang: stream.isDub ? (stream.dubLang || '') : '',
                     _sortHdr: stream._sortHdr || '',
@@ -2169,7 +2202,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         }
 
         // Odstrániť interné _sort polia
-        streamy = streamy.map(({ _sortCached, _sortDub, _sortDubLang, _sortName, _sortCategory, _sortHdr, _sortSource, _sortQuality, _sortSize, _sortSeeds, ...rest }) => rest);
+        streamy = streamy.map(({ _sortCached, _sortRdBlocked, _sortDub, _sortDubLang, _sortName, _sortCategory, _sortHdr, _sortSource, _sortQuality, _sortSize, _sortSeeds, ...rest }) => rest);
 
         // 7. Max results limit
         const maxResultsVal = parseInt(userConfig.maxResults || '0');

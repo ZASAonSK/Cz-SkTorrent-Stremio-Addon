@@ -6,7 +6,7 @@ Neoficiálny Stremio doplnok pre vyhľadávanie a streamovanie filmov a seriálo
 
 Addon si môžeš nainštalovať a nakonfigurovať na tejto verejne bežiacej inštancii:
 
-🔗 **[Genez.io Inštancia](https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io/)**  *(po nasadení sem dáme tvoju URL)*
+🔗 **[Beamup Inštancia](https://52e4d3c860ff-sktorrent-addon.baby-beamup.club/configure)**
 
 ---
 

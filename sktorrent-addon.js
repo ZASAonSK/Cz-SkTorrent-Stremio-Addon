@@ -177,51 +177,130 @@ async function overitRealDebridCache(infoHashes, rdKey) {
     const unikatneHashe = [...new Set(platneHashe)].map(h => h.toLowerCase());
     const cacheMap = {};
 
-    logApi(`Checking Real-Debrid cache for ${unikatneHashe.length} hashes`);
+    logApi(`Checking Real-Debrid cache for ${unikatneHashe.length} hashes (pseudo-instant check)`);
 
-    // RD API supports batching: /instantAvailability/hash1/hash2/hash3
-    try {
-        const url = `${RD_API_BASE}/torrents/instantAvailability/${unikatneHashe.join('/')}`;
-        logApi(`RD cache URL: ${url.substring(0, 200)}...`);
-        
-        const res = await axios.get(url, {
-            headers: { "Authorization": `Bearer ${rdKey}` },
-            timeout: 15000
-        });
-
-        // Schema: { "hash": { "rd": [ { fileId: { filename, filesize } } ] } }
-        // If empty object {}, nothing is cached
-        if (res.data && typeof res.data === 'object') {
-            const responseKeys = Object.keys(res.data);
-            logApi(`RD instantAvailability returned ${responseKeys.length} hashes`);
-            
-            for (const responseHash of responseKeys) {
-                const h = responseHash.toLowerCase();
-                const hosterData = res.data[responseHash];
+    // /instantAvailability endpoint bol ODSTANENY z RD API.
+    // Nahrada: addMagnet -> selectFiles -> check status -> delete
+    // https://github.com/wjH-3/RD-InstantAvailability-2.0
+    
+    const limit = pLimit(2); // Low concurrency - kazdy check = 3-4 API calls
+    
+    await Promise.all(unikatneHashe.map(hash =>
+        limit(async () => {
+            let torrentId = null;
+            try {
+                // 1. Add magnet to RD
+                const magnetUri = `magnet:?xt=urn:btih:${hash}`;
+                const addRes = await axios.post(`${RD_API_BASE}/torrents/addMagnet`,
+                    `magnet=${encodeURIComponent(magnetUri)}`,
+                    {
+                        headers: { "Authorization": `Bearer ${rdKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+                        timeout: 10000
+                    }
+                );
                 
-                // Check if "rd" (Real-Debrid) hoster has files
-                if (hosterData && hosterData.rd && Array.isArray(hosterData.rd) && hosterData.rd.length > 0) {
-                    const fileCount = Object.keys(hosterData.rd[0] || {}).length;
-                    logSuccess(`RD cached hash: ${h.substring(0, 12)}... (${fileCount} files)`);
-                    cacheMap[h] = true;
+                if (!addRes.data || !addRes.data.id) {
+                    if (addRes.data && addRes.data.error) {
+                        logCache(`RD addMagnet error for ${hash.substring(0,12)}...: ${addRes.data.error}`);
+                    }
+                    return; // Cannot check cache
+                }
+                
+                torrentId = addRes.data.id;
+                
+                // 2. Get torrent info to check status
+                const infoRes = await axios.get(`${RD_API_BASE}/torrents/info/${torrentId}`, {
+                    headers: { "Authorization": `Bearer ${rdKey}` },
+                    timeout: 10000
+                });
+                
+                const info = infoRes.data;
+                if (!info || !info.files) return;
+                
+                const status = info.status || '';
+                logCache(`RD status for ${hash.substring(0,12)}...: "${status}"`);
+                
+                // 3. If waiting for file selection, select all video files
+                if (status === 'waiting_files_selection') {
+                    const videoFileIds = info.files
+                        .filter(f => /\.(mp4|mkv|avi|m4v|mov|wmv|flv|webm)$/i.test(f.path || f.name || ''))
+                        .map(f => f.id);
+                    
+                    if (videoFileIds.length === 0) {
+                        // No video files - use first file as fallback
+                        videoFileIds.push(info.files[0].id);
+                    }
+                    
+                    await axios.post(`${RD_API_BASE}/torrents/selectFiles/${torrentId}`,
+                        `files=${videoFileIds.join(',')}`,
+                        {
+                            headers: { "Authorization": `Bearer ${rdKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+                            timeout: 10000
+                        }
+                    );
+                    
+                    // 4. Wait a moment and re-check status
+                    await new Promise(r => setTimeout(r, 1000));
+                    
+                    const infoRes2 = await axios.get(`${RD_API_BASE}/torrents/info/${torrentId}`, {
+                        headers: { "Authorization": `Bearer ${rdKey}` },
+                        timeout: 10000
+                    });
+                    
+                    const status2 = infoRes2.data ? infoRes2.data.status : '';
+                    
+                    if (status2 === 'downloaded') {
+                        logSuccess(`RD CACHED: ${hash.substring(0,12)}...`);
+                        cacheMap[hash] = true;
+                    } else {
+                        logCache(`RD NOT cached: ${hash.substring(0,12)}... (status: ${status2})`);
+                    }
+                } else if (status === 'downloaded' || status === 'magnet_conversion') {
+                    // Already has files selected or still converting magnet
+                    // Wait for conversion and check
+                    if (status === 'magnet_conversion') {
+                        await new Promise(r => setTimeout(r, 2000));
+                        const infoRes3 = await axios.get(`${RD_API_BASE}/torrents/info/${torrentId}`, {
+                            headers: { "Authorization": `Bearer ${rdKey}` },
+                            timeout: 10000
+                        });
+                        if (infoRes3.data && infoRes3.data.status === 'downloaded') {
+                            logSuccess(`RD CACHED: ${hash.substring(0,12)}... (after magnet conversion)`);
+                            cacheMap[hash] = true;
+                        } else {
+                            logCache(`RD NOT cached after conversion: ${hash.substring(0,12)}...`);
+                        }
+                    } else {
+                        logSuccess(`RD CACHED: ${hash.substring(0,12)}... (status: ${status})`);
+                        cacheMap[hash] = true;
+                    }
                 } else {
-                    logCache(`RD NOT cached: ${h.substring(0, 12)}...`);
+                    logCache(`RD NOT cached: ${hash.substring(0,12)}... (status: ${status})`);
+                }
+            } catch (error) {
+                const errMsg = error.response ? `HTTP ${error.response.status}` : 'network error';
+                if (error.response && error.response.status === 403) {
+                    logCache(`RD account needs premium: ${hash.substring(0,12)}...`);
+                } else if (error.response && error.response.status === 503) {
+                    logCache(`RD service unavailable: ${hash.substring(0,12)}...`);
+                } else {
+                    logCache(`RD cache check error for ${hash.substring(0,12)}...: ${errMsg}`);
+                }
+            } finally {
+                // 5. Always cleanup - delete the temporary torrent
+                if (torrentId) {
+                    try {
+                        await axios.delete(`${RD_API_BASE}/torrents/delete/${torrentId}`, {
+                            headers: { "Authorization": `Bearer ${rdKey}` },
+                            timeout: 5000
+                        });
+                    } catch (e) {
+                        // Cleanup failure is non-critical
+                    }
                 }
             }
-        } else {
-            logApi(`RD instantAvailability returned non-object: ${typeof res.data}`);
-        }
-    } catch (error) {
-        if (error.response) {
-            if (error.response.status === 404) {
-                logCache(`RD cache: all ${unikatneHashe.length} hashes not found (404)`);
-            } else {
-                logError(`Real-Debrid cache check failed (HTTP ${error.response.status})`, error);
-            }
-        } else {
-            logError(`Real-Debrid cache check failed (network error)`, error);
-        }
-    }
+        })
+    ));
 
     logSuccess(`Real-Debrid cache check complete. Found ${Object.keys(cacheMap).length}/${unikatneHashe.length} cached items.`);
     return cacheMap;

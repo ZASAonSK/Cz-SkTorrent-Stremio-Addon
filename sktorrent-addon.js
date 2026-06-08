@@ -938,7 +938,7 @@ app.use((req, res, next) => {
 
 // --- Web UI ---
 app.get(['/', '/configure', '/:config/configure'], (req, res) => {
-    
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     let currentConfig = {};
     if (req.params.config) {
         try {

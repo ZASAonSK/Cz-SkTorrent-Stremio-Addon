@@ -983,7 +983,7 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>SKTorrent Addon</title>
+        <title>TorrentSK</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d0d0d; color: #e0e0e0; display: flex; justify-content: center; padding: 30px 15px; }
@@ -1051,7 +1051,7 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                         <button class="lang-btn" data-lang-btn="en" onclick="setLang('en')">🇬🇧</button>
                     </div>
                     <div style="flex:2;">
-                        <h2 data-i18n="title">✦ SKTorrent Addon</h2>
+                        <h2 data-i18n="title">TorrentSK</h2>
                         <p data-i18n="subtitle" style="font-size:13px;color:#888;margin-top:6px;">Nastav si preferencie a vygeneruj inštalačný odkaz</p>
                     </div>
                 </div>
@@ -1224,7 +1224,7 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
 
             var I18N = {
                 sk: {
-                    'title': '✦ SKTorrent Addon',
+                    'title': 'TorrentSK',
                     'subtitle': 'Nastav si preferencie a vygeneruj inštalačný odkaz',
                     'section.connection': 'Pripojenie',
                     'desc.connection': 'Prihlasovacie údaje a API kľúče',
@@ -1291,7 +1291,7 @@ app.get(['/configure', '/:config/configure'], (req, res) => {
                     'section.sort': 'Zoradenie',
                 },
                 en: {
-                    'title': '✦ SKTorrent Addon',
+                    'title': 'TorrentSK',
                     'subtitle': 'Configure your preferences and generate install link',
                     'section.sort': 'Sort Order',
                     'section.connection': 'Connection',
@@ -1621,11 +1621,15 @@ const handleManifest = (req, res) => {
         'Surrogate-Control': 'no-store'
     });
 
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
     res.json({
-        id: "org.stremio.skcztorrent.addon", 
+        id: "org.stremio.sktorrent.addon", 
         version: "1.7.0",
-        name: "SKTorrent + TorBox (Multi-User)",
+        name: "TorrentSK",
         description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
+        logo: `${baseUrl}/logo.png`,
+        icon: `${baseUrl}/logo.png`,
         types: ["movie", "series"],
         catalogs: [],
         resources: ["stream"],
@@ -2246,6 +2250,14 @@ app.get("/:config/download/:hash/:sktId", async (req, res) => {
     }
 });
 
+app.get("/logo.jpg", (req, res) => {
+    res.sendFile(path.join(__dirname, "logo.jpg"));
+});
+
+app.get("/logo.png", (req, res) => {
+    res.sendFile(path.join(__dirname, "logo.png"));
+});
+
 app.get("/info-video", (req, res) => {
     res.sendFile(path.join(__dirname, "stahuje-sa.mp4")); 
 });
@@ -2256,7 +2268,7 @@ exports.handler = app;
 // fallback pre lokálne spustenie
 app.listen(PORT, () => {
     console.log(`\n======================================================`);
-    console.log(`🚀 SKTorrent Multi-User beží na portu ${PORT}`);
+    console.log(`🚀 TorrentSK beží na portu ${PORT}`);
     console.log(`🌐 Public URL: ${PUBLIC_URL}`);
     console.log(`======================================================\n`);
 });

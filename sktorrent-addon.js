@@ -694,62 +694,45 @@ if (videoSubory.length === 1) {
 
     if (videoSubory.length > 0) {
       // Ak je v torrente viacero videí (teda je to pack)
-if (videoSubory.length > 1 && meta) {
-    let foundMatch = false;
+if (vlastnyTyp === "movie" && meta && meta.titleOriginal) {
+    const rawTitle = odstranDiakritiku(meta.titleOriginal || meta.titleCz || "").toLowerCase().trim();
+    const m = rawTitle.match(/^(.*?)\s+(\d+)$/);
 
-    const normalizeName = (s) => odstranDiakritiku(String(s || ""))
-        .toLowerCase()
-        .replace(/[._\-()[\]{}]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+    if (m) {
+        const baseTitle = m[1].trim();
+        const targetNum = parseInt(m[2], 10);
+        const escapedBase = baseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    const metaTitle = normalizeName(meta.titleOriginal || meta.titleCz || "");
-    const numMatch = metaTitle.match(/(.*?)\s+(\d+)$/);
-    const targetNum = numMatch ? parseInt(numMatch[2], 10) : null;
-    const targetYear = meta.yearStart ? parseInt(meta.yearStart, 10) : null;
+        const before = torrenty.length;
 
-    for (const f of videoSubory) {
-        const justName = f.path.split(/[/\\]/).pop();
-        const clean = normalizeName(justName);
+        torrenty = torrenty.filter(t => {
+            const name = odstranDiakritiku(t.name).toLowerCase();
 
-        let score = 0;
+            if (!new RegExp(`\\b${escapedBase}\\b`, "i").test(name)) {
+                return false;
+            }
 
-        if (targetNum !== null) {
-            if (new RegExp(`\\b${targetNum}\\b`).test(clean)) score += 100;
-            if (targetNum === 2 && /\bii\b/.test(clean)) score += 100;
-            if (targetNum === 3 && /\biii\b/.test(clean)) score += 100;
-            if (targetNum === 4 && /\biv\b/.test(clean)) score += 100;
-            if (targetNum === 5 && /\bv\b/.test(clean)) score += 100;
-        }
+            if (/\b(komplet|pack|kolekce|kolekcia|collection|1\s*[-–]\s*5|1\s*[-–]\s*6|1\s*az\s*5)\b/i.test(name)) {
+                return true;
+            }
 
-        if (targetYear && new RegExp(`\\b${targetYear}\\b`).test(clean)) score += 40;
+            const rangeMatch = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
+            if (rangeMatch) {
+                const lo = parseInt(rangeMatch[1], 10);
+                const hi = parseInt(rangeMatch[2], 10);
+                return targetNum >= lo && targetNum <= hi;
+            }
 
-        if (metaTitle) {
-            const baseWords = metaTitle
-                .replace(/\b\d+\b/g, "")
-                .split(" ")
-                .filter(w => w.length >= 4);
+            const nums = [...name.matchAll(/\b(\d{1,2})\b/g)].map(x => parseInt(x[1], 10));
 
-            const hits = baseWords.filter(w => clean.includes(w)).length;
-            score += hits * 15;
-        }
+            if (nums.length === 0) {
+                return true;
+            }
 
-        f.__score = score;
-    }
+            return nums.includes(targetNum);
+        });
 
-    videoSubory.sort((a, b) => (b.__score || 0) - (a.__score || 0) || (b.length || 0) - (a.length || 0));
-
-    if ((videoSubory[0].__score || 0) > 0) {
-        najdenyIndex = videoSubory[0].index;
-        najdenyNazovSuboru = videoSubory[0].path;
-        foundMatch = true;
-        logWarn(`[MOVIE PACK MATCH] Selected: ${najdenyNazovSuboru} | score=${videoSubory[0].__score}`);
-    }
-
-    if (!foundMatch) {
-        najdenyIndex = videoSubory[0].index;
-        najdenyNazovSuboru = videoSubory[0].path;
-        logWarn(`[MOVIE PACK FALLBACK] No exact match, using largest/best file: ${najdenyNazovSuboru}`);
+        logWarn(`MOVIE NUMBER FILTER: ${before} -> ${torrenty.length}`);
     }
 }else {
         // Pre normálny filmový torrent (1 video súbor) zoberieme ten prvý

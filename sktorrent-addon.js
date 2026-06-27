@@ -1165,26 +1165,52 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 
     if (!uspesneNajdeneCezCsfd) {
         const predNameFiltrom = torrenty.length;
-        torrenty = torrenty.filter(t => {
-            let rawName = odstranDiakritiku(t.name.toLowerCase()).replace(/^stiahni si\s*/i, "").trim();
-            const prefixRe = /^(?:filmy|film|serialy|serial|seriál|seria|serie|dokumenty|dokument|tv|kreslene|kreslené|anime)\b/i;
-            const junkRe = /^(?:\s+|[-–_|/]+|\[[^\]]*]|\([^)]+\)|1080p|720p|2160p|4k|hdr|web[-\s]?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en)\b/i;
-            
-            let prev;
-            do {
-                prev = rawName;
-                rawName = rawName.replace(prefixRe, "").trim();
-                rawName = rawName.replace(junkRe, "").trim();
-            } while (rawName !== prev);
+torrenty = torrenty.filter(t => {
+  let rawName = odstranDiakritiku(t.name).toLowerCase()
+    .replace(/stiahni si/i, '').trim();
+  const prefixRe = /^(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|animei)\s*/i;
+  const junkRe = /\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en)\b/gi;
+  let prev;
+  do {
+    prev = rawName;
+    rawName = rawName.replace(prefixRe, '').trim();
+    rawName = rawName.replace(junkRe, '').trim();
+  } while (rawName !== prev);
 
-            for (const nazov of unikatneNazvy) {
-                const hl = odstranDiakritiku(nazov.toLowerCase()).trim();
-                if (!hl) continue;
-                const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                if (new RegExp(`^${escaped}\\b`, "i").test(rawName)) return true;
-            }
-            return false;
-        });
+  for (const nazov of unikatneNazvy) {
+    const hl = odstranDiakritiku(nazov).toLowerCase().trim();
+    if (!hl) continue;
+    const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(escaped, 'i').test(rawName)) return true;
+  }
+
+  // ✅ NOVÁ LOGIKA: Pack detekcia
+  // Ak hľadáme film s číslom v názve (napr. "Scary Movie 2"),
+  // skontrolujeme, či rawName obsahuje základný názov (bez čísla)
+  // a rozsah čísel, do ktorého naše číslo spadá.
+  for (const nazov of unikatneNazvy) {
+    const hl = odstranDiakritiku(nazov).toLowerCase().trim();
+    // Nájdeme číslo na konci názvu: "scary movie 2" → base="scary movie", num=2
+    const numMatch = hl.match(/^(.*?)\s+(\d+)$/);
+    if (!numMatch) continue;
+    const baseTitle = numMatch[1].trim(); // "scary movie"
+    const targetNum = parseInt(numMatch[2]); // 2
+    const escapedBase = baseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Skontrolujeme, či rawName obsahuje základný názov
+    if (!new RegExp(escapedBase, 'i').test(rawName)) continue;
+    // Hľadáme rozsah čísel v rawName: napr. "1 - 5", "1-5", "1 5"
+    const rangeMatch = rawName.match(/(\d+)\s*[-–]\s*(\d+)/);
+    if (rangeMatch) {
+      const lo = parseInt(rangeMatch[1]);
+      const hi = parseInt(rangeMatch[2]);
+      if (targetNum >= lo && targetNum <= hi) {
+        return true; // ✅ Pack obsahuje náš film
+      }
+    }
+  }
+
+  return false;
+});
         logInfo(`Title accuracy filter complete. Remaining: ${torrenty.length} (filtered out ${predNameFiltrom - torrenty.length} unrelated titles)`);
     }
 

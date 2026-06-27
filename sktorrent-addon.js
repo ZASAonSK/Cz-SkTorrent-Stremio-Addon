@@ -685,18 +685,67 @@ if (videoSubory.length === 1) {
         logSuccess(`[TORRENT: ${t.name}] ÚSPECH! Pre S${seria}E${epizoda} vybraný súbor: ${najdenyNazovSuboru}`);
     }
 }
-     } else {
-        // --- VYHĽADANIE SÚBORU PRE FILMY ---
-        // Vyfiltrujeme video súbory a zoradíme ich podľa veľkosti zostupne (najväčší bude prvý)
-        const videoSubory = torrentData.files
-            .filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.path))
-            .sort((a, b) => (b.length || 0) - (a.length || 0));
+  // --- VYHADANIE SBORU PRE FILMY ---
+  } else {
+    // Vyfiltrujeme video sbory
+    const videoSubory = torrentData.files
+      .filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.path))
+      .sort((a, b) => (b.length || 0) - (a.length || 0));
 
-        if (videoSubory.length > 0) {
-            // Pre film vyberieme ten úplne najväčší video súbor (vyhneme sa tým "Sample" videám)
+    if (videoSubory.length > 0) {
+      // Ak je v torrente viacero videí (teda je to pack)
+      if (videoSubory.length > 1 && meta && meta.titleOriginal) {
+        // Skúsime nájsť súbor, ktorý obsahuje hľadané číslo alebo rok (ak ho má film v názve)
+        let foundMatch = false;
+        
+        // Získame základný názov z metadát a ak má číslo, pokúsime sa ho nájsť
+        const hl = odstranDiakritiku(meta.titleOriginal || meta.titleCz || "").toLowerCase();
+        const numMatch = hl.match(/(.*?)\s+(\d+)$/);
+        
+        if (numMatch) {
+            // Hľadáme film s číslom (Scary Movie 2)
+            const targetNum = numMatch[2]; // "2"
+            
+            // Regex ktorý hľadá číslo v názve súboru (napr. "Scary Movie 2.mkv" alebo "Scary.Movie.2.2001.mkv")
+            // Skontrolujeme aby za číslom nešlo hneď ďalšie číslo, nech nezoberieme "2000" ako "2"
+            const numRegex = new RegExp(`\\b${targetNum}\\b`, 'i');
+            const yearRegex = meta.yearStart ? new RegExp(`\\b${meta.yearStart}\\b`, 'i') : null;
+
+            for (const f of videoSubory) {
+                const justName = f.path.split(/[/\\]/).pop();
+                // Ak súbor obsahuje číslo dielu alebo rok vydania filmu
+                if (numRegex.test(justName) || (yearRegex && yearRegex.test(justName))) {
+                    najdenyIndex = f.index;
+                    najdenyNazovSuboru = f.path;
+                    foundMatch = true;
+                    break;
+                }
+            }
+        } else if (meta.yearStart) {
+            // Ak film nemá číslo (napr. prvý diel), hľadáme aspoň podľa roku "2000" alebo podľa toho, že neobsahuje čísla 2,3,4,5
+            const yearRegex = new RegExp(`\\b${meta.yearStart}\\b`, 'i');
+            for (const f of videoSubory) {
+                const justName = f.path.split(/[/\\]/).pop();
+                if (yearRegex.test(justName)) {
+                    najdenyIndex = f.index;
+                    najdenyNazovSuboru = f.path;
+                    foundMatch = true;
+                    break;
+                }
+            }
+        }
+        
+        // Ak sa nepodarilo nájsť presný match, vrátime najväčší (ako fallback)
+        if (!foundMatch) {
             najdenyIndex = videoSubory[0].index;
             najdenyNazovSuboru = videoSubory[0].path;
-        } else if (torrentData.files.length > 0) {
+        }
+      } else {
+        // Pre normálny filmový torrent (1 video súbor) zoberieme ten prvý
+        najdenyIndex = videoSubory[0].index;
+        najdenyNazovSuboru = videoSubory[0].path;
+      }
+    } else if (torrentData.files.length > 0) {
             // Záloha: ak torrent nemá štandardnú video koncovku, zoberieme jednoducho najväčší súbor v torrente
             const najvacsiSubor = [...torrentData.files].sort((a, b) => (b.length || 0) - (a.length || 0))[0];
             najdenyIndex = najvacsiSubor.index;

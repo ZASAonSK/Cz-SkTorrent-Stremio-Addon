@@ -1357,18 +1357,19 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     }
 
     const execLimit = pLimit(5);
-if (vlastnyTyp === 'movie' && meta) {
+// --- FINAL MOVIE FILTER ---
+if (vlastnyTyp === 'movie' && metaInfo) {
     const normalize = (s) => odstranDiakritiku(String(s || '').toLowerCase())
         .replace(/^stiahni si\s*/i, '')
         .replace(/[._\-()[\]{}]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
-    const metaTitleRaw = meta.titleOriginal || meta.titleCz || '';
+    const metaTitleRaw = metaInfo.titleOriginal || metaInfo.titleCz || '';
     const metaTitle = normalize(metaTitleRaw);
     const titleWords = metaTitle.split(' ').filter(w => w.length >= 3 && !/^\d+$/.test(w));
 
-    const metaYear = meta.yearStart || null;
+    const metaYear = metaInfo.yearStart || null;
     const hasNumberInTitle = /^(.*?\s)(\d+)$/.test(metaTitleRaw);
 
     const before = torrenty.length;
@@ -1376,15 +1377,25 @@ if (vlastnyTyp === 'movie' && meta) {
     torrenty = torrenty.filter(t => {
         const n = normalize(t.name);
 
+        // 1. Torrent musí obsahovať základné slová z názvu filmu
         if (!titleWords.every(w => n.includes(w))) return false;
 
-        if (metaYear && !new RegExp(`\\b${metaYear}\\b`).test(n)) {
-            const otherYear = n.match(/\b(19\d{2}|20\d{2})\b/);
-            if (otherYear && parseInt(otherYear[1], 10) !== metaYear) return false;
+        // 2. Ak máme rok z TMDB/Cinemeta, kontrolujeme iné roky v názve torrentu
+        if (metaYear) {
+            // Nájdeme všetky 4-ciferné roky v rozmedzí 1900-2099
+            const yearsInName = [...n.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map(m => parseInt(m[1], 10));
+            
+            // Ak torrent obsahuje aspoň jeden rok, a ani jeden sa nezhoduje s naším
+            if (yearsInName.length > 0 && !yearsInName.includes(metaYear)) {
+                return false; 
+            }
         }
 
-        if (!hasNumberInTitle) {
+        // 3. Ak film NEMÁ číslo v názve (napr. prvý diel), nesmie to byť sequel (2, 3, 4, 5...)
+        // (Balíčky 1-5 necháme prejsť, lebo tie sa ošetrujú neskôr)
+        if (!hasNumberInTitle && !/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/.test(n)) {
             const smallNums = [...n.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+            // Ak je tam číslo 2 až 20, vyradíme to (lebo hľadáme len prvý diel bez čísla)
             if (smallNums.some(x => x >= 2 && x <= 20)) return false;
         }
 

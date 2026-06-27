@@ -1340,29 +1340,34 @@ if (vlastnyTyp === 'movie' && metaInfo?.titleOriginal) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  const titleWords = clean(metaInfo.titleOriginal || metaInfo.titleCz || '')
-    .split(' ')
-    .filter(w => w.length >= 3 && !/^\d+$/.test(w));
-
+  const titleBase = clean(metaInfo.titleOriginal || metaInfo.titleCz || '');
+  const titleWords = titleBase.split(' ').filter(w => w.length >= 3 && !/^\d+$/.test(w));
   const before = torrenty.length;
 
-  torrenty = torrenty.filter(t => {
+  const scored = torrenty.map(t => {
     const name = clean(t.name);
-    if (!name) return false;
+    let score = 0;
 
-    const hasBase = titleWords.every(w => name.includes(w));
-    if (!hasBase) return false;
+    if (name.includes(titleBase)) score += 20;
+    for (const w of titleWords) if (name.includes(w)) score += 5;
 
-    const sequel = name.match(/\b(\d{1,2})\b/g)?.map(Number) || [];
-    const hasBadSequel = sequel.some(n => n >= 5);
+    if (new RegExp(`\\b${metaInfo.yearStart}\\b`).test(name)) score += 3;
+    if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name)) score += 2;
 
-    const isPack = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name);
-    const year = metaInfo.yearStart ? String(metaInfo.yearStart) : null;
-    if (year && name.includes(year)) return true;
+    const nums = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+    if (metaInfo.yearStart && nums.includes(metaInfo.yearStart)) score += 2;
 
-    if (isPack) return !hasBadSequel;
-    return !hasBadSequel;
+    if (nums.some(n => n >= 5)) score -= 8;
+    if (/\b(2026|2025|2024|2023)\b/.test(name) && !new RegExp(`\\b${metaInfo.yearStart}\\b`).test(name)) score -= 6;
+
+    return { t, name, score };
   });
+
+  const positives = scored.filter(x => x.score >= 8);
+  torrenty = (positives.length > 0 ? positives : scored)
+    .sort((a, b) => b.score - a.score || (b.t.seeds || 0) - (a.t.seeds || 0))
+    .map(x => x.t)
+    .slice(0, 4);
 
   logWarn(`FINAL MOVIE FILTER: ${before} -> ${torrenty.length}`);
 }

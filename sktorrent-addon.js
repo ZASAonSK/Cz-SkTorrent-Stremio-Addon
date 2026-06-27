@@ -1369,36 +1369,28 @@ if (vlastnyTyp === 'movie' && metaInfo) {
     const metaTitle = normalize(metaTitleRaw);
     const metaYear = metaInfo.yearStart || null;
 
-    const titleWords = metaTitle.split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w));
-    const hasSequelNumber = /^(.*?\s)(\d+)$/.test(metaTitleRaw);
-    const sequelNum = hasSequelNumber ? parseInt(metaTitleRaw.match(/(\d+)$/)[1], 10) : null;
+    const baseWords = metaTitle.split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w));
+    const sequelNum = (metaTitleRaw.match(/(\d+)$/) || [null, null])[1];
 
     const before = torrenty.length;
 
     torrenty = torrenty.filter(t => {
         const n = normalize(t.name);
 
-        const hitCount = titleWords.filter(w => n.includes(w)).length;
-        if (hitCount === 0) return false;
+        if (!baseWords.some(w => n.includes(w))) return false;
 
         if (metaYear) {
             const years = [...n.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map(m => parseInt(m[1], 10));
-            if (years.length > 0 && !years.includes(metaYear)) {
-                return false;
-            }
+            if (years.length > 0 && !years.includes(metaYear)) return false;
         }
 
-        if (sequelNum !== null) {
-            const nums = [...n.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
-            if (nums.length > 0 && !nums.includes(sequelNum)) {
-                const rangeMatch = n.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
-                if (rangeMatch) {
-                    const lo = parseInt(rangeMatch[1], 10);
-                    const hi = parseInt(rangeMatch[2], 10);
-                    if (!(sequelNum >= lo && sequelNum <= hi)) return false;
-                } else {
-                    return false;
-                }
+        if (sequelNum) {
+            const hasDigit = new RegExp(`\\b${sequelNum}\\b`).test(n);
+            const hasRoman = sequelNum === '2' && /\bii\b/i.test(n);
+            const hasPack = /\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/.test(n);
+
+            if (!hasDigit && !hasRoman && !hasPack) {
+                return false;
             }
         }
 

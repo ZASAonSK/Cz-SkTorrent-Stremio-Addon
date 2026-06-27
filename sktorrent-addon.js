@@ -1332,40 +1332,33 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 if (vlastnyTyp === 'movie' && metaInfo?.titleOriginal) {
   const clean = s => odstranDiakritiku(String(s || '').toLowerCase())
     .replace(/^stiahni si\s*/i, '')
-    .replace(/\b(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|anime)\b/gi, ' ')
-    .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en|cam)\b/gi, ' ')
     .replace(/\(\d{4}\)/g, ' ')
     .replace(/\b(19|20)\d{2}\b/g, ' ')
+    .replace(/\b(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|anime)\b/gi, ' ')
+    .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en|cam)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  const raw = clean(metaInfo.titleOriginal || metaInfo.titleCz || '');
-  const parts = raw.split(/\s+/);
-  const targetNum = /\d+$/.test(parts[parts.length - 1]) ? parseInt(parts.pop(), 10) : null;
-  const base = parts.join(' ');
+  const title = clean(metaInfo.titleOriginal || metaInfo.titleCz || '');
+  const targetYear = metaInfo.yearStart ? String(metaInfo.yearStart) : null;
 
   const before = torrenty.length;
 
   torrenty = torrenty.filter(t => {
     const name = clean(t.name);
-    if (!name.includes(base)) return false;
+    if (!name) return false;
+    if (!name.includes(title)) return false;
 
-    if (targetNum === null) {
-      if (/\b(5|6|7|8|9|10)\b/.test(name)) return false;
-      return true;
+    const sequelHits = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+    const hasBadSequel = sequelHits.some(n => n >= 5);
+
+    if (targetYear && name.includes(targetYear)) return true;
+
+    if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name)) {
+      return !hasBadSequel;
     }
 
-    const range = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
-    if (range) {
-      const lo = parseInt(range[1], 10);
-      const hi = parseInt(range[2], 10);
-      return targetNum >= lo && targetNum <= hi;
-    }
-
-    if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name)) return true;
-
-    const n = name.match(/\b(\d{1,2})\b/);
-    return n ? parseInt(n[1], 10) === targetNum : false;
+    return !hasBadSequel;
   });
 
   logWarn(`FINAL MOVIE FILTER: ${before} -> ${torrenty.length}`);

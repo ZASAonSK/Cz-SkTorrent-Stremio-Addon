@@ -693,59 +693,16 @@ if (videoSubory.length === 1) {
       .sort((a, b) => (b.length || 0) - (a.length || 0));
 
     if (videoSubory.length > 0) {
-      // Ak je v torrente viacero videí (teda je to pack)
-if (vlastnyTyp === "movie" && meta && meta.titleOriginal) {
-    const rawTitle = odstranDiakritiku(meta.titleOriginal || meta.titleCz || "").toLowerCase().trim();
-    const m = rawTitle.match(/^(.*?)\s+(\d+)$/);
-
-    if (m) {
-        const baseTitle = m[1].trim();
-        const targetNum = parseInt(m[2], 10);
-        const escapedBase = baseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-        const before = torrenty.length;
-
-        torrenty = torrenty.filter(t => {
-            const name = odstranDiakritiku(t.name).toLowerCase();
-
-            if (!new RegExp(`\\b${escapedBase}\\b`, "i").test(name)) {
-                return false;
-            }
-
-            if (/\b(komplet|pack|kolekce|kolekcia|collection|1\s*[-–]\s*5|1\s*[-–]\s*6|1\s*az\s*5)\b/i.test(name)) {
-                return true;
-            }
-
-            const rangeMatch = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
-            if (rangeMatch) {
-                const lo = parseInt(rangeMatch[1], 10);
-                const hi = parseInt(rangeMatch[2], 10);
-                return targetNum >= lo && targetNum <= hi;
-            }
-
-            const nums = [...name.matchAll(/\b(\d{1,2})\b/g)].map(x => parseInt(x[1], 10));
-
-            if (nums.length === 0) {
-                return true;
-            }
-
-            return nums.includes(targetNum);
-        });
-
-        logWarn(`MOVIE NUMBER FILTER: ${before} -> ${torrenty.length}`);
-    }
-}else {
-        // Pre normálny filmový torrent (1 video súbor) zoberieme ten prvý
-        najdenyIndex = videoSubory[0].index;
-        najdenyNazovSuboru = videoSubory[0].path;
-      }
+      // Ak je v torrente viacero videí (teda je to pack), vyberieme najväčší video súbor
+      najdenyIndex = videoSubory[0].index;
+      najdenyNazovSuboru = videoSubory[0].path;
     } else if (torrentData.files.length > 0) {
-            // Záloha: ak torrent nemá štandardnú video koncovku, zoberieme jednoducho najväčší súbor v torrente
-            const najvacsiSubor = [...torrentData.files].sort((a, b) => (b.length || 0) - (a.length || 0))[0];
-            najdenyIndex = najvacsiSubor.index;
-            najdenyNazovSuboru = najvacsiSubor.path;
-        }
+      // Záloha: ak torrent nemá štandardnú video koncovku, zoberieme jednoducho najväčší súbor v torrente
+      const najvacsiSubor = [...torrentData.files].sort((a, b) => (b.length || 0) - (a.length || 0))[0];
+      najdenyIndex = najvacsiSubor.index;
+      najdenyNazovSuboru = najvacsiSubor.path;
     }
+  }
     
 
     // --- FORMÁTOVANIE METADÁT PRE TITLE ---

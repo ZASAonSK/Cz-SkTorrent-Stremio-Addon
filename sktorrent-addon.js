@@ -148,58 +148,74 @@ function ziskajMovieTarget(metaInfo, zakladneNazvy = []) {
 }
 
 function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
-    const normalizedName = normalizeTorrentName(torrentName);
-    const { baseTitle, sequelNumber } = ziskajMovieTarget(metaInfo, zakladneNazvy);
-    const targetYear = metaInfo?.yearStart || null;
+    const normalize = (s) => odstranDiakritiku(String(s || ''))
+        .toLowerCase()
+        .replace(/stiahni si/gi, ' ')
+        .replace(/[._\-()[\]{}:]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const name = normalize(torrentName);
+
+    const targets = [
+        metaInfo?.titleOriginal,
+        metaInfo?.titleCz,
+        ...(Array.isArray(zakladneNazvy) ? zakladneNazvy : [])
+    ].filter(Boolean).map(normalize);
+
+    if (targets.length === 0) return true;
+
+    let baseTitle = null;
+    let sequelNumber = null;
+
+    for (const t of targets) {
+        const clean = t.replace(/\b(19|20)\d{2}\b/g, ' ').replace(/\s+/g, ' ').trim();
+        const m = clean.match(/^(.*?)(?:\s+(\d+))?$/);
+        if (m && m[1]) {
+            baseTitle = m[1].trim();
+            sequelNumber = m[2] ? parseInt(m[2], 10) : null;
+            break;
+        }
+    }
 
     if (!baseTitle) return true;
 
     const escapedBase = escapeRegExp(baseTitle);
-    if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(normalizedName)) {
-        return false;
+    if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(name)) return false;
+
+    if (metaInfo?.yearStart) {
+        const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
+        if (years.length > 0 && !years.includes(metaInfo.yearStart)) {
+            if (!/\b(cam|ts|tc)\b/i.test(name)) return false;
+        }
     }
 
-    const packKeyword = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(normalizedName);
-    const rangeMatch = normalizedName.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
+    const pack = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name);
+    const range = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
 
     if (sequelNumber !== null) {
-        if (rangeMatch) {
-            const lo = parseInt(rangeMatch[1], 10);
-            const hi = parseInt(rangeMatch[2], 10);
+        if (pack) return true;
+
+        if (range) {
+            const lo = parseInt(range[1], 10);
+            const hi = parseInt(range[2], 10);
             if (sequelNumber >= lo && sequelNumber <= hi) return true;
         }
 
-        if (packKeyword) {
-            return true;
-        }
+        const digitMatches = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+        if (digitMatches.includes(sequelNumber)) return true;
 
-        const titleWithoutYears = normalizedName.replace(/\b(19|20)\d{2}\b/g, ' ');
-        const nums = [...titleWithoutYears.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+        if (sequelNumber === 2 && /\bii\b/i.test(name)) return true;
 
-        if (nums.length === 0) {
-            return false;
-        }
-
-        return nums.includes(sequelNumber);
-    }
-
-    if (targetYear) {
-        const years = [...normalizedName.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
-        if (years.length > 0 && !years.includes(targetYear)) {
-            return false;
-        }
+        return false;
     }
 
     return true;
 }
 
 function vyfiltrujMovieTorrenty(torrenty, metaInfo, zakladneNazvy = []) {
-    if (!Array.isArray(torrenty) || torrenty.length === 0) return [];
-    if (!metaInfo) return torrenty;
-
     const before = torrenty.length;
     const filtered = torrenty.filter(t => movieTorrentMatches(t.name, metaInfo, zakladneNazvy));
-
     logWarn(`MOVIE FILTER: ${before} -> ${filtered.length}`);
     return filtered;
 }

@@ -1241,56 +1241,57 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         rawName = rawName.replace(junkRe, '').trim();
       } while (rawName !== prev);
 
-      // 1. Zistíme, či originálny hľadaný názov filmu obsahoval číslo (napr. "Scary Movie 5")
-      let hasTargetNumber = false;
+      // --- ZISTENIE CI HLADAME FILM S CISLOM ---
       let targetNumber = null;
-      let baseTitleName = null;
-      
-      // Pozrieme sa do originálneho titleOriginal z metadát
-      if (metaInfo && metaInfo.titleOriginal) {
-          const mText = odstranDiakritiku(metaInfo.titleOriginal).toLowerCase().trim();
-          const nMatch = mText.match(/^(.*?)\s+(\d+)$/);
-          if (nMatch) {
-              hasTargetNumber = true;
-              baseTitleName = nMatch[1].trim(); // "scary movie"
-              targetNumber = parseInt(nMatch[2]); // 5
+      let targetBaseTitle = null;
+
+      if (metaInfo && metaInfo.titleOriginal && vlastnyTyp === 'movie') {
+          const originalHl = odstranDiakritiku(metaInfo.titleOriginal).toLowerCase().trim();
+          const numMatch = originalHl.match(/^(.*?)\s+(\d+)$/);
+          if (numMatch) {
+              targetBaseTitle = numMatch[1].trim(); 
+              targetNumber = parseInt(numMatch[2]);
           }
       }
 
-      // 2. Ak hľadaný film MÁ ČÍSLO na konci (pokračovanie, napr Scary Movie 5)
-      if (hasTargetNumber) {
-          const escapedBase = baseTitleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // --- LOGIKA PRE FILMY S CISLOM (napr. Scary Movie 5) ---
+      if (targetNumber !== null && targetBaseTitle !== null) {
+          const escapedBase = targetBaseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           
-          // Ak torrent vôbec neobsahuje základný názov ("scary movie"), vyhodíme ho
           if (!new RegExp(escapedBase, 'i').test(rawName)) return false;
 
-          // A. Je to Pack? (napr "1-5", "1 - 5")
+          // Kontrola na packy (1-5, atd.)
           const rangeMatch = rawName.match(/(\d+)\s*[-–]\s*(\d+)/);
           if (rangeMatch) {
               const lo = parseInt(rangeMatch[1]);
               const hi = parseInt(rangeMatch[2]);
-              if (targetNumber >= lo && targetNumber <= hi) return true; // Spadá do packu
+              if (targetNumber >= lo && targetNumber <= hi) return true;
           }
-          
-          // B. Nie je to pack, ale obsahuje presne to naše číslo? (napr "Scary Movie 5")
-          const numRegex = new RegExp(`\\b${targetNumber}\\b`, 'i');
-          if (numRegex.test(rawName)) return true;
 
-          // Ak to nebol ani pack s našim číslom, ani to nemá naše číslo v názve, vyhodíme!
-          return false;
+          // Strict match na nase cislo (napr. 5)
+          const strictNumberMatch = new RegExp(`\\b${targetNumber}\\b`, 'i');
+          if (strictNumberMatch.test(rawName)) return true;
+
+          // Ak mal film cislo, ale toto neni ani pack ani to nema nase cislo, zablokujeme ho!
+          // DOLEZITE: Tuto vrátime FALSE a kód už nepokračuje na filter bez čísla
+          return false; 
       }
 
-      // 3. Ak hľadaný film NEMAL ČÍSLO (napr "The Matrix") - štandardný filter
+      // --- LOGIKA PRE FILMY BEZ CISLA (The Matrix) a SERIALY ---
       for (const nazov of unikatneNazvy) {
         const hl = odstranDiakritiku(nazov).toLowerCase().trim();
         if (!hl) continue;
         const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         
-        // Ak nájde zhodu s názvom (The Matrix) a zároveň torrent neobsahuje číslo iného dielu ("The Matrix 2")
         if (new RegExp(escaped, 'i').test(rawName)) {
-             // Ochrana proti zobraniu "Scary Movie 5" keď hľadáme jednotku "Scary Movie"
-             const extraNum = rawName.replace(new RegExp(escaped, 'i'), '').match(/\b([2-9]|1\d)\b/);
-             if (!extraNum) return true; // Ak tam nie je iné číslo (2,3,4...), pustíme
+            // Predtym, nez povieme YES, uistime sa, ze toto neni iny diel
+            const titleRemoved = rawName.replace(new RegExp(escaped, 'i'), '').trim();
+            // Najdeme ci sa hned za nazvom nenechadza cislo ako 2, 3 (okrem rokov 19xx/20xx)
+            const unexpectedNumMatch = titleRemoved.match(/^:?\s*(?!19\d{2}|20\d{2})\b(\d+)\b/);
+            if (unexpectedNumMatch) {
+                return false; 
+            }
+            return true;
         }
       }
 

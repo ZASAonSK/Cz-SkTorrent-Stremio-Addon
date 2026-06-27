@@ -1357,47 +1357,41 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     }
 
     const execLimit = pLimit(5);
-if (vlastnyTyp === 'movie' && metaInfo?.titleOriginal) {
-  const clean = s => odstranDiakritiku(String(s || '').toLowerCase())
-    .replace(/^stiahni si\s*/i, '')
-    .replace(/\(\d{4}\)/g, ' ')
-    .replace(/\b(19|20)\d{2}\b/g, ' ')
-    .replace(/\b(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|anime)\b/gi, ' ')
-    .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en|cam)\b/gi, ' ')
-    .replace(/[\/|()[\]{}_.:-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+if (vlastnyTyp === 'movie' && meta) {
+    const normalize = (s) => odstranDiakritiku(String(s || '').toLowerCase())
+        .replace(/^stiahni si\s*/i, '')
+        .replace(/[._\-()[\]{}]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
-  const titleBase = clean(metaInfo.titleOriginal || metaInfo.titleCz || '');
-  const titleWords = titleBase.split(' ').filter(w => w.length >= 3 && !/^\d+$/.test(w));
-  const before = torrenty.length;
+    const metaTitleRaw = meta.titleOriginal || meta.titleCz || '';
+    const metaTitle = normalize(metaTitleRaw);
+    const titleWords = metaTitle.split(' ').filter(w => w.length >= 3 && !/^\d+$/.test(w));
 
-  const scored = torrenty.map(t => {
-    const name = clean(t.name);
-    let score = 0;
+    const metaYear = meta.yearStart || null;
+    const hasNumberInTitle = /^(.*?\s)(\d+)$/.test(metaTitleRaw);
 
-    if (name.includes(titleBase)) score += 20;
-    for (const w of titleWords) if (name.includes(w)) score += 5;
+    const before = torrenty.length;
 
-    if (new RegExp(`\\b${metaInfo.yearStart}\\b`).test(name)) score += 3;
-    if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name)) score += 2;
+    torrenty = torrenty.filter(t => {
+        const n = normalize(t.name);
 
-    const nums = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
-    if (metaInfo.yearStart && nums.includes(metaInfo.yearStart)) score += 2;
+        if (!titleWords.every(w => n.includes(w))) return false;
 
-    if (nums.some(n => n >= 5)) score -= 8;
-    if (/\b(2026|2025|2024|2023)\b/.test(name) && !new RegExp(`\\b${metaInfo.yearStart}\\b`).test(name)) score -= 6;
+        if (metaYear && !new RegExp(`\\b${metaYear}\\b`).test(n)) {
+            const otherYear = n.match(/\b(19\d{2}|20\d{2})\b/);
+            if (otherYear && parseInt(otherYear[1], 10) !== metaYear) return false;
+        }
 
-    return { t, name, score };
-  });
+        if (!hasNumberInTitle) {
+            const smallNums = [...n.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+            if (smallNums.some(x => x >= 2 && x <= 20)) return false;
+        }
 
-  const positives = scored.filter(x => x.score >= 8);
-  torrenty = (positives.length > 0 ? positives : scored)
-    .sort((a, b) => b.score - a.score || (b.t.seeds || 0) - (a.t.seeds || 0))
-    .map(x => x.t)
-    .slice(0, 4);
+        return true;
+    });
 
-  logWarn(`FINAL MOVIE FILTER: ${before} -> ${torrenty.length}`);
+    logWarn(`FINAL MOVIE FILTER: ${before} -> ${torrenty.length}`);
 }
     logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)...`);
     

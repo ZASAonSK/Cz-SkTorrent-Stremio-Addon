@@ -1329,53 +1329,47 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     }
 
     const execLimit = pLimit(5);
-    if (vlastnyTyp === 'movie' && metaInfo?.titleOriginal) {
-      const clean = s => odstranDiakritiku(String(s || '').toLowerCase())
-        .replace(/^stiahni si\s*/i, '')
-        .replace(/\(\d{4}\)/g, ' ')
-        .replace(/\b(19|20)\d{2}\b/g, ' ')
-        .replace(/\b(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|anime)\b/gi, ' ')
-        .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en|cam)\b/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+if (vlastnyTyp === 'movie' && metaInfo?.titleOriginal) {
+  const clean = s => odstranDiakritiku(String(s || '').toLowerCase())
+    .replace(/^stiahni si\s*/i, '')
+    .replace(/\b(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|anime)\b/gi, ' ')
+    .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en|cam)\b/gi, ' ')
+    .replace(/\(\d{4}\)/g, ' ')
+    .replace(/\b(19|20)\d{2}\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-      const titleClean = clean(metaInfo.titleOriginal || metaInfo.titleCz || '');
-      const titleParts = titleClean.split(/\s+/);
-      const expectedNumber = /\d+$/.test(titleParts[titleParts.length - 1])
-        ? parseInt(titleParts[titleParts.length - 1], 10)
-        : null;
-      const baseTitle = expectedNumber !== null
-        ? titleParts.slice(0, -1).join(' ')
-        : titleClean;
+  const raw = clean(metaInfo.titleOriginal || metaInfo.titleCz || '');
+  const parts = raw.split(/\s+/);
+  const targetNum = /\d+$/.test(parts[parts.length - 1]) ? parseInt(parts.pop(), 10) : null;
+  const base = parts.join(' ');
 
-      const predFinalFiltrom = torrenty.length;
+  const before = torrenty.length;
 
-      torrenty = torrenty.filter(t => {
-        const name = clean(t.name);
-        if (!name) return false;
-        if (!name.includes(baseTitle)) return false;
+  torrenty = torrenty.filter(t => {
+    const name = clean(t.name);
+    if (!name.includes(base)) return false;
 
-        if (expectedNumber !== null) {
-          const range = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
-          if (range) {
-            const lo = parseInt(range[1], 10);
-            const hi = parseInt(range[2], 10);
-            return expectedNumber >= lo && expectedNumber <= hi;
-          }
-
-          if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name)) {
-            return true;
-          }
-
-          const num = name.match(/\b(\d{1,2})\b/);
-          return num ? parseInt(num[1], 10) === expectedNumber : false;
-        }
-
-        return true;
-      });
-
-      logWarn(`FINAL MOVIE FILTER: ${predFinalFiltrom} -> ${torrenty.length}`);
+    if (targetNum === null) {
+      if (/\b(5|6|7|8|9|10)\b/.test(name)) return false;
+      return true;
     }
+
+    const range = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
+    if (range) {
+      const lo = parseInt(range[1], 10);
+      const hi = parseInt(range[2], 10);
+      return targetNum >= lo && targetNum <= hi;
+    }
+
+    if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name)) return true;
+
+    const n = name.match(/\b(\d{1,2})\b/);
+    return n ? parseInt(n[1], 10) === targetNum : false;
+  });
+
+  logWarn(`FINAL MOVIE FILTER: ${before} -> ${torrenty.length}`);
+}
     logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)...`);
     
     // POSIELAME `metaInfo` do `vytvoritStream`

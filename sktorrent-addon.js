@@ -1,4 +1,4 @@
-// SKTorrent Addon v1.7.0 + TORBOX + ČSFD
+// SKTorrent Addon v2.0.0 + TORBOX + ČSFD
 const { addonBuilder } = require("stremio-addon-sdk");
 const { decode } = require("entities");
 const axios = require("axios");
@@ -1067,8 +1067,8 @@ const handleManifest = (req, res) => {
 
     res.json({
         id: "org.stremio.skcztorrent.addon", 
-        version: "1.7.0",
-        name: "SKTorrent + TorBox (Multi-User)",
+        version: "2.0.0",
+        name: "Cz-SkTorrent Addon",
         description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
         types: ["movie", "series"],
         catalogs: [],

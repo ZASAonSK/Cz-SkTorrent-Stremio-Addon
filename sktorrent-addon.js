@@ -1206,17 +1206,22 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             }
         }
         
-        if (d === csfdLink && torrenty.length > 0) {
-            logSuccess(`Nájdené cez ČSFD Link. Mám ${torrenty.length} výsledkov.`);
-            uspesneNajdeneCezCsfd = true;
-        }
-        
-        // Upravené: Ukončíme textové dotazy iba vtedy, ak sme nazbierali naozaj veľa (napr 30+)
-        // alebo ak sme použili presný ČSFD link (ten vráti vďaka paginácii kľudne 60 torrentov naraz)
-        if (uspesneNajdeneCezCsfd || torrenty.length >= 30) {
-            logInfo("Dostatok torrentov nájdených alebo použitý presný link, preskakujem ďalšie dotazy.");
-            break; 
-        }
+      if (d === csfdLink && torrenty.length > 0) {
+        logSuccess(`Nájdené cez ČSFD Link. Mám ${torrenty.length} výsledkov.`);
+        uspesneNajdeneCezCsfd = true;
+      }
+
+      // Ak sme našli film cez CSFD link (pokus 1), necháme prejsť ešte jeden 
+      // textový vyhľadávací pokus (pokus 2), aby sme našli packy.
+      if (uspesneNajdeneCezCsfd) {
+          if (vlastnyTyp === 'series' || pokus > 1) {
+              logInfo(`ČSFD link a packy spracované. Preskakujem ďalšie dotazy.`);
+              break;
+          }
+      } else if (torrenty.length >= 30) {
+        logInfo(`Dostatok torrentov nájdených, preskakujem ďalšie dotazy.`);
+        break;
+      }
 
         if (pokus > 10) break; 
         pokus++;

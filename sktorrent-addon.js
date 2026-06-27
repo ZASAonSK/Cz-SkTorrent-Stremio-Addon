@@ -1227,93 +1227,89 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         pokus++;
     }
 
-    if (!uspesneNajdeneCezCsfd) {
-    const predNameFiltrom = torrenty.length;
-    torrenty = torrenty.filter(t => {
-      let rawName = odstranDiakritiku(t.name).toLowerCase()
-        .replace(/stiahni si/i, '').trim();
-      const prefixRe = /^(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|animei)\s*/i;
-      const junkRe = /\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en)\b/gi;
-      let prev;
-      do {
-        prev = rawName;
-        rawName = rawName.replace(prefixRe, '').trim();
-        rawName = rawName.replace(junkRe, '').trim();
-      } while (rawName !== prev);
-
-      // 1. OVEĽA LEPŠIE zistenie, či hľadaný film obsahuje číslo.
-      // Prejdeme VŠETKY dostupné názvy zo Stremia (jeden z nich bude určite "Scary Movie 5")
+        if (!uspesneNajdeneCezCsfd) {
+      // 1. EŠTE PRED FILTROVANÍM zistíme náš "targetNumber" z pôvodných (neupravených) názvov
       let targetNumber = null;
       let targetBaseTitle = null;
 
       if (vlastnyTyp === 'movie') {
-          for (const n of unikatneNazvy) {
+          // Prechádzame zakladneNazvy, nie unikatneNazvy (lebo tam už je pridaný orezaný pack názov!)
+          for (const n of zakladneNazvy) {
               const text = odstranDiakritiku(n).toLowerCase().trim();
-              const numMatch = text.match(/^(.*?)\s+(\d+)$/); // Hľadá presne "scary movie 5"
+              const numMatch = text.match(/^(.*?)\s+(\d+)$/);
               if (numMatch) {
-                  targetBaseTitle = numMatch[1].trim(); // "scary movie"
-                  targetNumber = parseInt(numMatch[2], 10); // 5
-                  break; // Hneď ako nájdeme číslo, skončíme hľadanie
+                  targetBaseTitle = numMatch[1].trim(); // napr "scary movie"
+                  targetNumber = parseInt(numMatch[2], 10); // napr 5
+                  break; 
               }
           }
       }
 
-      // 2. LOGIKA PRE FILMY S ČÍSLOM (Scary Movie 5)
-      if (targetNumber !== null && targetBaseTitle !== null) {
-          const escapedBase = targetBaseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          
-          // Musí obsahovať aspoň "Scary Movie", inak vyhadzujeme
-          if (!new RegExp(escapedBase, 'i').test(rawName)) return false;
+      const predNameFiltrom = torrenty.length;
+      torrenty = torrenty.filter(t => {
+          let rawName = odstranDiakritiku(t.name).toLowerCase().replace(/stiahni si/i, '').trim();
+          const prefixRe = /^(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|animei)\s*/i;
+          const junkRe = /\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en)\b/gi;
+          let prev;
+          do {
+            prev = rawName;
+            rawName = rawName.replace(prefixRe, '').trim();
+            rawName = rawName.replace(junkRe, '').trim();
+          } while (rawName !== prev);
 
-          // A) Zistíme či je to Pack s rozsahom čísel (1-5)
-          const rangeMatch = rawName.match(/(\d+)\s*[-–]\s*(\d+)/);
-          if (rangeMatch) {
-              const lo = parseInt(rangeMatch[1]);
-              const hi = parseInt(rangeMatch[2]);
-              if (targetNumber >= lo && targetNumber <= hi) return true; // Päťka tam je!
+          // AK HĽADANÝ FILM MAL ČÍSLO (napr Scary Movie 5)
+          if (targetNumber !== null && targetBaseTitle !== null) {
+              const escapedBase = targetBaseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              
+              if (!new RegExp(escapedBase, 'i').test(rawName)) return false;
+
+              // A) Pack s rozsahom čísel (1-5)
+              const rangeMatch = rawName.match(/(\d+)\s*[-–]\s*(\d+)/);
+              if (rangeMatch) {
+                  const lo = parseInt(rangeMatch[1]);
+                  const hi = parseInt(rangeMatch[2]);
+                  if (targetNumber >= lo && targetNumber <= hi) return true;
+              }
+
+              // B) Pack podľa slova (komplet, pack, kolekcia)
+              if (/\b(komplet|pack|kolekce|kolekcia|trilogy|quadrilogy|saga|collection)\b/i.test(rawName)) {
+                  return true;
+              }
+
+              // C) Obsahuje presne naše číslo?
+              const strictNumberMatch = new RegExp(`\\b${targetNumber}\\b`, 'i');
+              if (strictNumberMatch.test(rawName)) return true;
+
+              return false; // DEFINITÍVNE ZABLOKUJEME, AK NESPLNIL NIČ Z TOHTO
           }
 
-          // B) Zistíme či to je Pack podľa slova (komplet, pack, kolekcia)
-          if (/\b(komplet|pack|kolekce|kolekcia|trilogy|quadrilogy|saga|collection)\b/i.test(rawName)) {
-              return true; // Pustíme, lebo je to balíček celej série
-          }
-
-          // C) Obsahuje presne naše číslo (5)?
-          const strictNumberMatch = new RegExp(`\\b${targetNumber}\\b`, 'i');
-          if (strictNumberMatch.test(rawName)) return true;
-
-          // D) Pre istotu, ak by v torrente bola rímska číslica "Scary Movie V"
-          const romanNumerals = ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
-          const roman = romanNumerals[targetNumber] || null;
-          if (roman) {
-              const strictRomanMatch = new RegExp(`\\b${roman}\\b`, 'i');
-              if (strictRomanMatch.test(rawName)) return true;
-          }
-
-          // Ak film mal číslo (5), ale toto nebol ani pack, ani to nemá číslo 5 (ako napr. Scary Movie 2026), 
-          // DEFINITÍVNE HO ZABLOKUJEME a končíme!
-          return false; 
-      }
-
-      // 3. LOGIKA PRE FILMY BEZ ČÍSLA (The Matrix, Avatar) a SERIÁLY
-      for (const nazov of unikatneNazvy) {
-        const hl = odstranDiakritiku(nazov).toLowerCase().trim();
-        if (!hl) continue;
-        const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        
-        if (new RegExp(escaped, 'i').test(rawName)) {
-            // Predtým, než vrátime TRUE pre obyčajný film, skontrolujeme nechcené pokračovanie (Avatar 2)
-            const titleRemoved = rawName.replace(new RegExp(escaped, 'i'), '').trim();
-            const unexpectedNumMatch = titleRemoved.match(/^:?\s*(?!19\d{2}|20\d{2})\b(\d+)\b/);
-            if (unexpectedNumMatch) {
-                return false; 
+          // AK HĽADANÝ FILM NEMAL ČÍSLO (The Matrix, Avatar, alebo seriály)
+          for (const nazov of unikatneNazvy) {
+            const hl = odstranDiakritiku(nazov).toLowerCase().trim();
+            if (!hl) continue;
+            const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            
+            if (new RegExp(escaped, 'i').test(rawName)) {
+                // Skontrolujeme, či tam NIE JE nejaké ďalšie číslo dielu
+                // Zoberieme pôvodný názov torrentu a hľadáme v ňom explicitne číslo 2, 3, 4, atď. (okrem rokov)
+                const titleRemoved = rawName.replace(new RegExp(escaped, 'i'), ' ');
+                // Upravený regex: hľadá číslo dielu (1-99), ale NIE roky ako 2026, 1999 atď.
+                const hasUnexpectedSequel = titleRemoved.match(/(?<!\d)(?:[1-9]|[1-9]\d)(?!\d)(?!\s*p\b)/i);
+                
+                // Extra kontrola - ak to číslo vyzerá ako rok (19xx alebo 20xx), tak to odignorujeme
+                if (hasUnexpectedSequel) {
+                    const foundNum = parseInt(hasUnexpectedSequel[0], 10);
+                    if (foundNum < 1900 || foundNum > 2099) {
+                        return false; // Je to pokračovanie iného dielu! Zahadzujeme
+                    }
+                }
+                
+                return true;
             }
-            return true;
-        }
-      }
+          }
 
-      return false;
-    });
+          return false;
+      });
         logInfo(`Title accuracy filter complete. Remaining: ${torrenty.length} (filtered out ${predNameFiltrom - torrenty.length} unrelated titles)`);
     }
 

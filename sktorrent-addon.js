@@ -1233,14 +1233,22 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
       let targetBaseTitle = null;
 
       if (vlastnyTyp === 'movie') {
-          // Prechádzame zakladneNazvy, nie unikatneNazvy (lebo tam už je pridaný orezaný pack názov!)
           for (const n of zakladneNazvy) {
-              const text = odstranDiakritiku(n).toLowerCase().trim();
+              // Odstránime najprv rok v zátvorkách, ak tam nejaký je (napr. "(2013)") a orežeme to
+              let text = odstranDiakritiku(n).toLowerCase().replace(/\(\d{4}\)/g, '').trim();
+              
+              // Hľadáme číslo na konci, pričom ignorujeme ak tam ostal nejaký textový "chvost"
+              // Tento regex znamená: akákoľvek znaková sada, medzera, jedno alebo viac cifier, a koniec.
               const numMatch = text.match(/^(.*?)\s+(\d+)$/);
+              
               if (numMatch) {
-                  targetBaseTitle = numMatch[1].trim(); // napr "scary movie"
-                  targetNumber = parseInt(numMatch[2], 10); // napr 5
-                  break; 
+                  const potencionalneCislo = parseInt(numMatch[2], 10);
+                  // Skontrolujeme, či to náhodou nie je rok bez zátvorky (napr. Blade Runner 2049)
+                  if (potencionalneCislo < 1900 || potencionalneCislo > 2099) {
+                      targetBaseTitle = numMatch[1].trim(); 
+                      targetNumber = potencionalneCislo; 
+                      break; 
+                  }
               }
           }
       }

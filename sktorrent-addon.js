@@ -1253,11 +1253,12 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
           }
       }
 
-      const predNameFiltrom = torrenty.length;
+            const predNameFiltrom = torrenty.length;
       torrenty = torrenty.filter(t => {
           let rawName = odstranDiakritiku(t.name).toLowerCase().replace(/stiahni si/i, '').trim();
           const prefixRe = /^(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|animei)\s*/i;
           const junkRe = /\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en)\b/gi;
+          
           let prev;
           do {
             prev = rawName;
@@ -1265,30 +1266,50 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             rawName = rawName.replace(junkRe, '').trim();
           } while (rawName !== prev);
 
+          // ODSTRANENIE ROKOV Z RAWNAME, aby 2026 alebo 2000 nevyvolali pocit, že je to nejaké číslo dielu
+          rawName = rawName.replace(/\b(19|20)\d{2}\b/g, '').trim();
+
           // AK HĽADANÝ FILM MAL ČÍSLO (napr Scary Movie 5)
           if (targetNumber !== null && targetBaseTitle !== null) {
               const escapedBase = targetBaseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
               
               if (!new RegExp(escapedBase, 'i').test(rawName)) return false;
 
-              // A) Pack s rozsahom čísel (1-5)
-              const rangeMatch = rawName.match(/(\d+)\s*[-–]\s*(\d+)/);
+              // Najskôr zistíme, či torrent obsahuje samotné číslo 5 (ako samostatné slovo)
+              const strictNumberMatch = new RegExp(`\\b${targetNumber}\\b`, 'i');
+              const maNaseCislo = strictNumberMatch.test(rawName);
+
+              // Ďalej zistíme, či je to balíček
+              let jeToPack = false;
+              
+              // Rozsah 1-5, 1 - 5, 1 az 5
+              const rangeMatch = rawName.match(/(\d+)\s*[-–až]\s*(\d+)/);
               if (rangeMatch) {
                   const lo = parseInt(rangeMatch[1]);
                   const hi = parseInt(rangeMatch[2]);
-                  if (targetNumber >= lo && targetNumber <= hi) return true;
+                  if (targetNumber >= lo && targetNumber <= hi) {
+                      jeToPack = true;
+                  }
               }
 
-              // B) Pack podľa slova (komplet, pack, kolekcia)
+              // Slovný pack
               if (/\b(komplet|pack|kolekce|kolekcia|trilogy|quadrilogy|saga|collection)\b/i.test(rawName)) {
-                  return true;
+                  jeToPack = true;
               }
 
-              // C) Obsahuje presne naše číslo?
-              const strictNumberMatch = new RegExp(`\\b${targetNumber}\\b`, 'i');
-              if (strictNumberMatch.test(rawName)) return true;
+              // Rímske číslice (pre istotu, keby to bolo Scary Movie V)
+              const romanNumerals = ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
+              const roman = romanNumerals[targetNumber] || null;
+              const maRimskeCislo = roman ? new RegExp(`\\b${roman}\\b`, 'i').test(rawName) : false;
 
-              return false; // DEFINITÍVNE ZABLOKUJEME, AK NESPLNIL NIČ Z TOHTO
+              // ROZHODNUTIE PRE FILM S ČÍSLOM:
+              // Ak to MÁ NAŠE ČÍSLO alebo je to PACK (ktorý našu päťku obsahuje), PUSTÍME HO.
+              // Ak nie, BEZ MILOSTI HO ZAHODÍME.
+              if (maNaseCislo || maRimskeCislo || jeToPack) {
+                  return true;
+              } else {
+                  return false;
+              }
           }
 
           // AK HĽADANÝ FILM NEMAL ČÍSLO (The Matrix, Avatar, alebo seriály)
@@ -1298,18 +1319,12 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             
             if (new RegExp(escaped, 'i').test(rawName)) {
-                // Skontrolujeme, či tam NIE JE nejaké ďalšie číslo dielu
-                // Zoberieme pôvodný názov torrentu a hľadáme v ňom explicitne číslo 2, 3, 4, atď. (okrem rokov)
                 const titleRemoved = rawName.replace(new RegExp(escaped, 'i'), ' ');
-                // Upravený regex: hľadá číslo dielu (1-99), ale NIE roky ako 2026, 1999 atď.
+                // Hľadá číslo dielu 1-99
                 const hasUnexpectedSequel = titleRemoved.match(/(?<!\d)(?:[1-9]|[1-9]\d)(?!\d)(?!\s*p\b)/i);
                 
-                // Extra kontrola - ak to číslo vyzerá ako rok (19xx alebo 20xx), tak to odignorujeme
                 if (hasUnexpectedSequel) {
-                    const foundNum = parseInt(hasUnexpectedSequel[0], 10);
-                    if (foundNum < 1900 || foundNum > 2099) {
-                        return false; // Je to pokračovanie iného dielu! Zahadzujeme
-                    }
+                    return false; // Je to pokračovanie iného dielu! Zahadzujeme
                 }
                 
                 return true;

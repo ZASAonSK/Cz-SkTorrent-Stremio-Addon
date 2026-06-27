@@ -181,17 +181,20 @@ function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
     if (!baseTitle) return true;
 
     const escapedBase = escapeRegExp(baseTitle);
-    if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(name)){
-    logWarn(`[FILTER OUT] ${nazovTorrentu} | reason=BASE_MISMATCH`);
-    return false;
-}
+
+    if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(name)) {
+        logWarn(`[FILTER OUT] ${torrentName} | reason=BASE_MISMATCH`);
+        return false;
+    }
+
     if (metaInfo?.yearStart) {
         const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
         if (years.length > 0 && !years.includes(metaInfo.yearStart)) {
-            if (!/\b(cam|ts|tc)\b/i.test(name)){
-    logWarn(`[FILTER OUT] ${nazovTorrentu} | reason=BASE_MISMATCH`);
-    return false;
-}        }
+            if (!/\b(cam|ts|tc)\b/i.test(name)) {
+                logWarn(`[FILTER OUT] ${torrentName} | reason=YEAR_MISMATCH`);
+                return false;
+            }
+        }
     }
 
     const pack = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name);
@@ -210,7 +213,8 @@ function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
         if (digitMatches.includes(sequelNumber)) return true;
 
         if (sequelNumber === 2 && /\bii\b/i.test(name)) return true;
-    logWarn(`[FILTER OUT] ${nazovTorrentu} | reason=BASE_MISMATCH`);
+
+        logWarn(`[FILTER OUT] ${torrentName} | reason=SEQUEL_MISMATCH`);
         return false;
     }
 
@@ -476,8 +480,8 @@ function torrentSediSEpizodou(nazov, seria, epizoda) {
         }
     }
 
-    if (toMaZluEpizodu){
-    logWarn(`[FILTER OUT] ${nazovTorrentu} | reason=BASE_MISMATCH`);
+if (toMaZluEpizodu) {
+    logWarn(`[FILTER OUT] ${nazov} | reason=EPISODE_MISMATCH`);
     return false;
 }
     // Explicitná zhoda pre požadovanú epizódu

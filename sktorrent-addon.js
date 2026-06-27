@@ -694,53 +694,81 @@ if (videoSubory.length === 1) {
 
     if (videoSubory.length > 0) {
       // Ak je v torrente viacero videí (teda je to pack)
-      if (videoSubory.length > 1 && meta && meta.titleOriginal) {
-        // Skúsime nájsť súbor, ktorý obsahuje hľadané číslo alebo rok (ak ho má film v názve)
-        let foundMatch = false;
-        
-        // Získame základný názov z metadát a ak má číslo, pokúsime sa ho nájsť
-        const hl = odstranDiakritiku(meta.titleOriginal || meta.titleCz || "").toLowerCase();
-        const numMatch = hl.match(/(.*?)\s+(\d+)$/);
-        
-        if (numMatch) {
-            // Hľadáme film s číslom (Scary Movie 2)
-            const targetNum = numMatch[2]; // "2"
-            
-            // Regex ktorý hľadá číslo v názve súboru (napr. "Scary Movie 2.mkv" alebo "Scary.Movie.2.2001.mkv")
-            // Skontrolujeme aby za číslom nešlo hneď ďalšie číslo, nech nezoberieme "2000" ako "2"
-            const numRegex = new RegExp(`\\b${targetNum}\\b`, 'i');
-            const yearRegex = meta.yearStart ? new RegExp(`\\b${meta.yearStart}\\b`, 'i') : null;
+if (videoSubory.length > 1 && meta && (meta.titleOriginal || meta.titleCz)) {
+    const normalize = (s) => odstranDiakritiku(String(s || "").toLowerCase())
+        .replace(/[._\-()[\]{}]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 
-            for (const f of videoSubory) {
-                const justName = f.path.split(/[/\\]/).pop();
-                // Ak súbor obsahuje číslo dielu alebo rok vydania filmu
-                if (numRegex.test(justName) || (yearRegex && yearRegex.test(justName))) {
-                    najdenyIndex = f.index;
-                    najdenyNazovSuboru = f.path;
-                    foundMatch = true;
-                    break;
-                }
+    const metaTitleRaw = meta.titleOriginal || meta.titleCz || "";
+    const metaTitle = normalize(metaTitleRaw);
+
+    const numMatch = metaTitle.match(/^(.*?)\s+(\d+)$/);
+    const targetBase = numMatch ? numMatch[1].trim() : metaTitle;
+    const targetNumber = numMatch ? parseInt(numMatch[2], 10) : null;
+
+    const baseWords = targetBase.split(" ").filter(w => w.length >= 3);
+    const yearRegex = meta.yearStart ? new RegExp(`\\b${meta.yearStart}\\b`, "i") : null;
+
+    let bestFile = null;
+    let bestScore = -9999;
+
+    for (const f of videoSubory) {
+        const justName = f.path.split(/[/\\\\]/).pop();
+        const fileName = normalize(justName);
+
+        let score = 0;
+
+        const matchedWords = baseWords.filter(w => fileName.includes(w)).length;
+        score += matchedWords * 5;
+
+        if (matchedWords === 0) score -= 50;
+        if (matchedWords < Math.max(1, Math.ceil(baseWords.length / 2))) score -= 20;
+
+        if (fileName.includes(targetBase)) score += 20;
+        if (yearRegex && yearRegex.test(fileName)) score += 8;
+
+        const fileNumbers = [...fileName.matchAll(/\b(\d{1,4})\b/g)].map(m => parseInt(m[1], 10));
+
+        if (targetNumber !== null) {
+            if (fileNumbers.includes(targetNumber)) {
+                score += 25;
             }
-        } else if (meta.yearStart) {
-            // Ak film nemá číslo (napr. prvý diel), hľadáme aspoň podľa roku "2000" alebo podľa toho, že neobsahuje čísla 2,3,4,5
-            const yearRegex = new RegExp(`\\b${meta.yearStart}\\b`, 'i');
-            for (const f of videoSubory) {
-                const justName = f.path.split(/[/\\]/).pop();
-                if (yearRegex.test(justName)) {
-                    najdenyIndex = f.index;
-                    najdenyNazovSuboru = f.path;
-                    foundMatch = true;
-                    break;
-                }
+
+            const otherSmallNumbers = fileNumbers.filter(n => n >= 1 && n <= 20 && n !== targetNumber);
+            if (otherSmallNumbers.length > 0) {
+                score -= 30;
             }
+
+            const rangeMatch = fileName.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
+            if (rangeMatch) {
+                const lo = parseInt(rangeMatch[1], 10);
+                const hi = parseInt(rangeMatch[2], 10);
+                if (targetNumber >= lo && targetNumber <= hi) score += 10;
+                else score -= 20;
+            }
+        } else {
+            const sequelNumbers = fileNumbers.filter(n => n >= 2 && n <= 20);
+            if (sequelNumbers.length > 0) score -= 25;
         }
-        
-        // Ak sa nepodarilo nájsť presný match, vrátime najväčší (ako fallback)
-        if (!foundMatch) {
-            najdenyIndex = videoSubory[0].index;
-            najdenyNazovSuboru = videoSubory[0].path;
+
+        if (/\b(sample|trailer)\b/i.test(fileName)) score -= 100;
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestFile = f;
         }
-      } else {
+    }
+
+    if (bestFile && bestScore > 0) {
+        najdenyIndex = bestFile.index;
+        najdenyNazovSuboru = bestFile.path;
+        logSuccess(`[TORRENT: ${t.name}] Movie pack match: ${najdenyNazovSuboru} (score ${bestScore})`);
+    } else {
+        logWarn(`[TORRENT: ${t.name}] VYRADENÝ! V movie packu nebol nájdený vhodný súbor pre "${metaTitleRaw}".`);
+        return null;
+    }
+}else {
         // Pre normálny filmový torrent (1 video súbor) zoberieme ten prvý
         najdenyIndex = videoSubory[0].index;
         najdenyNazovSuboru = videoSubory[0].path;

@@ -1170,12 +1170,22 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             dotazy.add(kratky + epTag2);
             dotazy.add(bezDia);
             dotazy.add(kratky);
-        } else {
-            [zaklad, bezDia, kratky].forEach(b => {
-                if (!b.trim()) return;
-                dotazy.add(b);
-            });
+      } else {
+        // --- PRIDANÉ: Najprv hľadáme základný názov bez čísla (pre packy) ---
+        const numMatch = bezDia.match(/^(.*?)\s+(\d+)$/);
+        if (numMatch) {
+            const baseName = numMatch[1].trim();
+            if (baseName.length > 2) {
+                dotazy.add(baseName); // Pridá napr. "Scary Movie"
+            }
         }
+        
+        // --- PÔVODNÉ: Potom hľadá presný názov s číslom ---
+        [zaklad, bezDia, kratky].forEach(b => {
+          if (!b.trim()) return;
+          dotazy.add(b); // Pridá napr. "Scary Movie 4"
+        });
+      }
     });
 
     let torrenty = [];

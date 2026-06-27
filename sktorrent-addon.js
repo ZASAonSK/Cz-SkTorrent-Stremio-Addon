@@ -181,7 +181,7 @@ function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
     if (!baseTitle) return true;
 
     const escapedBase = escapeRegExp(baseTitle);
-    if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(name)) return false;
+    if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(name)) logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`); return false;
 
     if (metaInfo?.yearStart) {
         const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
@@ -1293,6 +1293,7 @@ if (seria !== undefined) {
     logInfo(`Filtering series torrents for S${seria} E${epizoda}...`);
     const predFiltrom = torrenty.length;
     torrenty = torrenty.filter(t => torrentSedisSeriou(t.name, seria) && torrentSediSEpizodou(t.name, seria, epizoda));
+    logWarn(`[FILTER START] ${t.name}`);
     logInfo(`Series filter complete. Remaining: ${torrenty.length} (filtered out ${predFiltrom - torrenty.length})`);
 }
 

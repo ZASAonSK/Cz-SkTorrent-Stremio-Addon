@@ -1241,52 +1241,69 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         rawName = rawName.replace(junkRe, '').trim();
       } while (rawName !== prev);
 
-      // --- ZISTENIE CI HLADAME FILM S CISLOM ---
+      // 1. OVEĽA LEPŠIE zistenie, či hľadaný film obsahuje číslo.
+      // Prejdeme VŠETKY dostupné názvy zo Stremia (jeden z nich bude určite "Scary Movie 5")
       let targetNumber = null;
       let targetBaseTitle = null;
 
-      if (metaInfo && metaInfo.titleOriginal && vlastnyTyp === 'movie') {
-          const originalHl = odstranDiakritiku(metaInfo.titleOriginal).toLowerCase().trim();
-          const numMatch = originalHl.match(/^(.*?)\s+(\d+)$/);
-          if (numMatch) {
-              targetBaseTitle = numMatch[1].trim(); 
-              targetNumber = parseInt(numMatch[2]);
+      if (vlastnyTyp === 'movie') {
+          for (const n of unikatneNazvy) {
+              const text = odstranDiakritiku(n).toLowerCase().trim();
+              const numMatch = text.match(/^(.*?)\s+(\d+)$/); // Hľadá presne "scary movie 5"
+              if (numMatch) {
+                  targetBaseTitle = numMatch[1].trim(); // "scary movie"
+                  targetNumber = parseInt(numMatch[2], 10); // 5
+                  break; // Hneď ako nájdeme číslo, skončíme hľadanie
+              }
           }
       }
 
-      // --- LOGIKA PRE FILMY S CISLOM (napr. Scary Movie 5) ---
+      // 2. LOGIKA PRE FILMY S ČÍSLOM (Scary Movie 5)
       if (targetNumber !== null && targetBaseTitle !== null) {
           const escapedBase = targetBaseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           
+          // Musí obsahovať aspoň "Scary Movie", inak vyhadzujeme
           if (!new RegExp(escapedBase, 'i').test(rawName)) return false;
 
-          // Kontrola na packy (1-5, atd.)
+          // A) Zistíme či je to Pack s rozsahom čísel (1-5)
           const rangeMatch = rawName.match(/(\d+)\s*[-–]\s*(\d+)/);
           if (rangeMatch) {
               const lo = parseInt(rangeMatch[1]);
               const hi = parseInt(rangeMatch[2]);
-              if (targetNumber >= lo && targetNumber <= hi) return true;
+              if (targetNumber >= lo && targetNumber <= hi) return true; // Päťka tam je!
           }
 
-          // Strict match na nase cislo (napr. 5)
+          // B) Zistíme či to je Pack podľa slova (komplet, pack, kolekcia)
+          if (/\b(komplet|pack|kolekce|kolekcia|trilogy|quadrilogy|saga|collection)\b/i.test(rawName)) {
+              return true; // Pustíme, lebo je to balíček celej série
+          }
+
+          // C) Obsahuje presne naše číslo (5)?
           const strictNumberMatch = new RegExp(`\\b${targetNumber}\\b`, 'i');
           if (strictNumberMatch.test(rawName)) return true;
 
-          // Ak mal film cislo, ale toto neni ani pack ani to nema nase cislo, zablokujeme ho!
-          // DOLEZITE: Tuto vrátime FALSE a kód už nepokračuje na filter bez čísla
+          // D) Pre istotu, ak by v torrente bola rímska číslica "Scary Movie V"
+          const romanNumerals = ["", "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
+          const roman = romanNumerals[targetNumber] || null;
+          if (roman) {
+              const strictRomanMatch = new RegExp(`\\b${roman}\\b`, 'i');
+              if (strictRomanMatch.test(rawName)) return true;
+          }
+
+          // Ak film mal číslo (5), ale toto nebol ani pack, ani to nemá číslo 5 (ako napr. Scary Movie 2026), 
+          // DEFINITÍVNE HO ZABLOKUJEME a končíme!
           return false; 
       }
 
-      // --- LOGIKA PRE FILMY BEZ CISLA (The Matrix) a SERIALY ---
+      // 3. LOGIKA PRE FILMY BEZ ČÍSLA (The Matrix, Avatar) a SERIÁLY
       for (const nazov of unikatneNazvy) {
         const hl = odstranDiakritiku(nazov).toLowerCase().trim();
         if (!hl) continue;
         const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         
         if (new RegExp(escaped, 'i').test(rawName)) {
-            // Predtym, nez povieme YES, uistime sa, ze toto neni iny diel
+            // Predtým, než vrátime TRUE pre obyčajný film, skontrolujeme nechcené pokračovanie (Avatar 2)
             const titleRemoved = rawName.replace(new RegExp(escaped, 'i'), '').trim();
-            // Najdeme ci sa hned za nazvom nenechadza cislo ako 2, 3 (okrem rokov 19xx/20xx)
             const unexpectedNumMatch = titleRemoved.match(/^:?\s*(?!19\d{2}|20\d{2})\b(\d+)\b/);
             if (unexpectedNumMatch) {
                 return false; 

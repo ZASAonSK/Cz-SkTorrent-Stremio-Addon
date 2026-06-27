@@ -1369,21 +1369,37 @@ if (vlastnyTyp === 'movie' && metaInfo) {
     const metaTitle = normalize(metaTitleRaw);
     const metaYear = metaInfo.yearStart || null;
 
-    const baseWords = metaTitle
-        .split(' ')
-        .filter(w => w.length >= 4 && !/^\d+$/.test(w));
+    const titleWords = metaTitle.split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w));
+    const hasSequelNumber = /^(.*?\s)(\d+)$/.test(metaTitleRaw);
+    const sequelNum = hasSequelNumber ? parseInt(metaTitleRaw.match(/(\d+)$/)[1], 10) : null;
 
     const before = torrenty.length;
 
     torrenty = torrenty.filter(t => {
         const n = normalize(t.name);
 
-        const hasBaseHit = baseWords.some(w => n.includes(w));
-        if (!hasBaseHit) return false;
+        const hitCount = titleWords.filter(w => n.includes(w)).length;
+        if (hitCount === 0) return false;
 
-        const years = [...n.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map(m => parseInt(m[1], 10));
-        if (metaYear && years.length > 0 && !years.includes(metaYear)) {
-            return false;
+        if (metaYear) {
+            const years = [...n.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map(m => parseInt(m[1], 10));
+            if (years.length > 0 && !years.includes(metaYear)) {
+                return false;
+            }
+        }
+
+        if (sequelNum !== null) {
+            const nums = [...n.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+            if (nums.length > 0 && !nums.includes(sequelNum)) {
+                const rangeMatch = n.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
+                if (rangeMatch) {
+                    const lo = parseInt(rangeMatch[1], 10);
+                    const hi = parseInt(rangeMatch[2], 10);
+                    if (!(sequelNum >= lo && sequelNum <= hi)) return false;
+                } else {
+                    return false;
+                }
+            }
         }
 
         return true;

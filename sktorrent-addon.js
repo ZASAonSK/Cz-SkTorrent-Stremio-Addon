@@ -1332,22 +1332,18 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     if (vlastnyTyp === 'movie' && metaInfo?.titleOriginal) {
       const clean = s => odstranDiakritiku(String(s || '').toLowerCase())
         .replace(/^stiahni si\s*/i, '')
-        .replace(/\(\d{4}\)/g, ' ')
-        .replace(/\b(19|20)\d{2}\b/g, ' ')
         .replace(/\b(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|anime)\b/gi, ' ')
         .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en|cam)\b/gi, ' ')
+        .replace(/\(\d{4}\)/g, ' ')
+        .replace(/\b(19|20)\d{2}\b/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
-      const titleClean = clean(metaInfo.titleOriginal || metaInfo.titleCz || '');
-      const titleParts = titleClean.split(/\s+/);
-      const titleBase = titleParts.length > 1 && /^\d+$/.test(titleParts[titleParts.length - 1])
-        ? titleParts.slice(0, -1).join(' ')
-        : titleClean;
-
-      const expectedNumber = /^\d+$/.test(titleParts[titleParts.length - 1])
-        ? parseInt(titleParts[titleParts.length - 1], 10)
-        : null;
+      const titleRaw = odstranDiakritiku(String(metaInfo.titleOriginal || metaInfo.titleCz || '').toLowerCase());
+      const targetYear = metaInfo.yearStart ? String(metaInfo.yearStart) : null;
+      const targetHasNumber = /\b\d+\b$/.test(titleRaw.trim());
+      const targetNumber = targetHasNumber ? parseInt(titleRaw.trim().match(/(\d+)\s*$/)[1], 10) : null;
+      const baseTitle = targetHasNumber ? titleRaw.trim().replace(/\s+\d+\s*$/, '') : titleRaw.trim();
 
       const predFinalFiltrom = torrenty.length;
 
@@ -1355,33 +1351,24 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         const name = clean(t.name);
         if (!name) return false;
 
-        if (!new RegExp(`\\b${titleBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(name)) {
+        if (!name.includes(baseTitle)) return false;
+
+        const years = name.match(/\b(19|20)\d{2}\b/g) || [];
+        if (targetYear && years.length > 0 && !years.includes(targetYear)) {
           return false;
         }
 
-        const yearMatches = name.match(/\b(19|20)\d{2}\b/g) || [];
-        if (yearMatches.length > 0 && !yearMatches.includes(String(metaInfo.yearStart))) {
-          return false;
+        if (!targetHasNumber) {
+          if (/\b(5|6|7|8|9|10)\b/.test(name)) return false;
+          return true;
         }
 
-        if (expectedNumber !== null) {
-          const range = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
-          if (range) {
-            const lo = parseInt(range[1], 10);
-            const hi = parseInt(range[2], 10);
-            return expectedNumber >= lo && expectedNumber <= hi;
-          }
-
-          if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name)) {
-            return true;
-          }
-
-          const num = name.match(/\b(\d{1,2})\b/);
-          if (!num) return false;
-          return parseInt(num[1], 10) === expectedNumber;
+        if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/.test(name)) {
+          return true;
         }
 
-        return true;
+        const n = name.match(/\b(\d{1,2})\b/);
+        return n ? parseInt(n[1], 10) === targetNumber : false;
       });
 
       logWarn(`FINAL MOVIE FILTER: ${predFinalFiltrom} -> ${torrenty.length}`);

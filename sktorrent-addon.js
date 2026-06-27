@@ -106,6 +106,103 @@ function formatBytes(bytes) {
     while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
     return `${n.toFixed(i >= 2 ? 2 : 0)} ${u[i]}`;
 }
+function normalizeTorrentName(str) {
+    return odstranDiakritiku(String(str || ''))
+        .toLowerCase()
+        .replace(/stiahni si/gi, ' ')
+        .replace(/[._\-()[\]{}:]+/g, ' ')
+        .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|uhd|fhd|hevc|x265|x264|h264|h265|cam|cz|sk|en)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function escapeRegExp(str) {
+    return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function ziskajMovieTarget(metaInfo, zakladneNazvy = []) {
+    const kandidati = [
+        metaInfo?.titleOriginal,
+        metaInfo?.titleCz,
+        ...(Array.isArray(zakladneNazvy) ? zakladneNazvy : [])
+    ].filter(Boolean);
+
+    for (const raw of kandidati) {
+        const normalized = normalizeTorrentName(raw)
+            .replace(/\b(19|20)\d{2}\b/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const match = normalized.match(/^(.*?)(?:\s+(\d+))?$/);
+        if (!match) continue;
+
+        const baseTitle = (match[1] || '').trim();
+        const sequelNumber = match[2] ? parseInt(match[2], 10) : null;
+
+        if (baseTitle) {
+            return { baseTitle, sequelNumber };
+        }
+    }
+
+    return { baseTitle: null, sequelNumber: null };
+}
+
+function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
+    const normalizedName = normalizeTorrentName(torrentName);
+    const { baseTitle, sequelNumber } = ziskajMovieTarget(metaInfo, zakladneNazvy);
+    const targetYear = metaInfo?.yearStart || null;
+
+    if (!baseTitle) return true;
+
+    const escapedBase = escapeRegExp(baseTitle);
+    if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(normalizedName)) {
+        return false;
+    }
+
+    const packKeyword = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(normalizedName);
+    const rangeMatch = normalizedName.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
+
+    if (sequelNumber !== null) {
+        if (rangeMatch) {
+            const lo = parseInt(rangeMatch[1], 10);
+            const hi = parseInt(rangeMatch[2], 10);
+            if (sequelNumber >= lo && sequelNumber <= hi) return true;
+        }
+
+        if (packKeyword) {
+            return true;
+        }
+
+        const titleWithoutYears = normalizedName.replace(/\b(19|20)\d{2}\b/g, ' ');
+        const nums = [...titleWithoutYears.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+
+        if (nums.length === 0) {
+            return false;
+        }
+
+        return nums.includes(sequelNumber);
+    }
+
+    if (targetYear) {
+        const years = [...normalizedName.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
+        if (years.length > 0 && !years.includes(targetYear)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function vyfiltrujMovieTorrenty(torrenty, metaInfo, zakladneNazvy = []) {
+    if (!Array.isArray(torrenty) || torrenty.length === 0) return [];
+    if (!metaInfo) return torrenty;
+
+    const before = torrenty.length;
+    const filtered = torrenty.filter(t => movieTorrentMatches(t.name, metaInfo, zakladneNazvy));
+
+    logWarn(`MOVIE FILTER: ${before} -> ${filtered.length}`);
+    return filtered;
+}
 
 // ÚPLNE ZMENENÁ FUNKCIA (bez použitia withCache z tvojej Map)
 async function overitTorboxCache(infoHashes, torboxKey) {
@@ -1176,151 +1273,19 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         pokus++;
     }
 
-        if (!uspesneNajdeneCezCsfd) {
-      // 1. EŠTE PRED FILTROVANÍM zistíme náš "targetNumber" z pôvodných (neupravených) názvov
-      let targetNumber = null;
-      let targetBaseTitle = null;
-
-      if (vlastnyTyp === 'movie') {
-          for (const n of zakladneNazvy) {
-              const text = odstranDiakritiku(n)
-                  .toLowerCase()
-                  .replace(/\(\d{4}\)/g, '')
-                  .trim();
-
-              const numMatch = text.match(/^(.*?)\s+(\d+)$/);
-              if (numMatch) {
-                  targetBaseTitle = numMatch[1].trim();
-                  targetNumber = parseInt(numMatch[2], 10);
-                  break;
-              }
-          }
-      }
-
-      const predNameFiltrom = torrenty.length;
-
-      torrenty = torrenty.filter(t => {
-          let rawName = odstranDiakritiku(t.name)
-              .toLowerCase()
-              .replace(/stiahni si/gi, '')
-              .trim();
-
-          const prefixRe = /^(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|anime)\s*/i;
-          const junkRe = /\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en|cam)\b/gi;
-
-          let prev;
-          do {
-              prev = rawName;
-              rawName = rawName.replace(prefixRe, '').trim();
-              rawName = rawName.replace(junkRe, '').trim();
-          } while (rawName !== prev);
-
-          rawName = rawName.replace(/\(\d{4}\)/g, '').trim();
-          rawName = rawName.replace(/\b(19|20)\d{2}\b/g, '').trim();
-          rawName = rawName.replace(/\s+/g, ' ').trim();
-
-          if (targetNumber !== null && targetBaseTitle !== null) {
-              const escapedBase = targetBaseTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-              if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(rawName)) {
-                  return false;
-              }
-
-              const rangeMatch = rawName.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
-              if (rangeMatch) {
-                  const lo = parseInt(rangeMatch[1], 10);
-                  const hi = parseInt(rangeMatch[2], 10);
-                  return targetNumber >= lo && targetNumber <= hi;
-              }
-
-              if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(rawName)) {
-                  return true;
-              }
-
-              const standaloneNumber = rawName.match(/\b(\d{1,2})\b/);
-              if (standaloneNumber) {
-                  return parseInt(standaloneNumber[1], 10) === targetNumber;
-              }
-
-              return false;
-          }
-
-          for (const nazov of unikatneNazvy) {
-              const hl = odstranDiakritiku(nazov).toLowerCase().trim();
-              if (!hl) continue;
-
-              const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-              if (new RegExp(escaped, 'i').test(rawName)) {
-                  const titleRemoved = rawName.replace(new RegExp(escaped, 'i'), ' ');
-                  const hasUnexpectedSequel = titleRemoved.match(/(?<!\d)(?:[1-9]|[1-9]\d)(?!\d)(?!\s*p\b)/i);
-
-                  if (hasUnexpectedSequel) {
-                      const foundNum = parseInt(hasUnexpectedSequel[0], 10);
-                      if (foundNum < 1900 || foundNum > 2099) return false;
-                  }
-
-                  return true;
-              }
-          }
-
-          return false;
-      });
-
-      logInfo(`Title accuracy filter complete. Remaining: ${torrenty.length}, filtered out: ${predNameFiltrom - torrenty.length} unrelated titles.`);
-    }
-
-    if (seria !== undefined) {
-        logInfo(`Filtering series torrents for S${seria} E${epizoda}...`);
-        const predFiltrom = torrenty.length;
-        torrenty = torrenty.filter(t => torrentSedisSeriou(t.name, seria) && torrentSediSEpizodou(t.name, seria, epizoda));
-        logInfo(`Series filter complete. Remaining: ${torrenty.length} (filtered out ${predFiltrom - torrenty.length})`);
-    }
-
-    const execLimit = pLimit(5);
-// --- FINAL MOVIE FILTER ---
-if (vlastnyTyp === 'movie' && metaInfo) {
-    const normalize = (s) => odstranDiakritiku(String(s || '').toLowerCase())
-        .replace(/^stiahni si\s*/i, '')
-        .replace(/[._\-()[\]{}:]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    const metaTitleRaw = metaInfo.titleOriginal || metaInfo.titleCz || '';
-    const metaTitle = normalize(metaTitleRaw);
-    const metaYear = metaInfo.yearStart || null;
-
-    const baseWords = metaTitle.split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w));
-    const sequelNum = (metaTitleRaw.match(/(\d+)$/) || [null, null])[1];
-
-    const before = torrenty.length;
-
-    torrenty = torrenty.filter(t => {
-        const n = normalize(t.name);
-
-        if (!baseWords.some(w => n.includes(w))) return false;
-
-        if (metaYear) {
-            const years = [...n.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map(m => parseInt(m[1], 10));
-            if (years.length > 0 && !years.includes(metaYear)) return false;
-        }
-
-        if (sequelNum) {
-            const hasDigit = new RegExp(`\\b${sequelNum}\\b`).test(n);
-            const hasRoman = sequelNum === '2' && /\bii\b/i.test(n);
-            const hasPack = /\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/.test(n);
-
-            if (!hasDigit && !hasRoman && !hasPack) {
-                return false;
-            }
-        }
-
-        return true;
-    });
-
-    logWarn(`FINAL MOVIE FILTER: ${before} -> ${torrenty.length}`);
+if (seria !== undefined) {
+    logInfo(`Filtering series torrents for S${seria} E${epizoda}...`);
+    const predFiltrom = torrenty.length;
+    torrenty = torrenty.filter(t => torrentSedisSeriou(t.name, seria) && torrentSediSEpizodou(t.name, seria, epizoda));
+    logInfo(`Series filter complete. Remaining: ${torrenty.length} (filtered out ${predFiltrom - torrenty.length})`);
 }
-    logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)...`);
+
+if (vlastnyTyp === 'movie') {
+    torrenty = vyfiltrujMovieTorrenty(torrenty, metaInfo, zakladneNazvy);
+}
+
+const execLimit = pLimit(5);
+logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)...`);
     
     // POSIELAME `metaInfo` do `vytvoritStream`
     let streamy = (await Promise.all(

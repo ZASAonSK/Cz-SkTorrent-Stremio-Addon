@@ -186,7 +186,7 @@ function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
     if (metaInfo?.yearStart) {
         const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
         if (years.length > 0 && !years.includes(metaInfo.yearStart)) {
-            if (!/\b(cam|ts|tc)\b/i.test(name)) return false;
+            if (!/\b(cam|ts|tc)\b/i.test(name)) logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`); return false;
         }
     }
 
@@ -206,7 +206,7 @@ function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
         if (digitMatches.includes(sequelNumber)) return true;
 
         if (sequelNumber === 2 && /\bii\b/i.test(name)) return true;
-
+        logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`);
         return false;
     }
 
@@ -389,23 +389,23 @@ function torrentSedisSeriou(nazovTorrentu, seria) {
     }
     // 2. Kontrola, či to nie je EXPLICITNE INÁ samostatná séria 
     const serieMatch = nazovTorrentu.match(/\b(\d+)\.\s*s[eé]rie/i);
-    if (serieMatch && parseInt(serieMatch[1], 10) !== seria) return false;
+    if (serieMatch && parseInt(serieMatch[1], 10) !== seria) logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`); return false;
 
     const seasonMatch = nazovTorrentu.match(/\bSeason\s+(\d+)\b/i);
-    if (seasonMatch && parseInt(seasonMatch[1], 10) !== seria) return false;
+    if (seasonMatch && parseInt(seasonMatch[1], 10) !== seria) logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`); return false;
 
     // --- PRIDANÁ OPRAVA: Kontrola presného formátu SxxEyy ---
     // Ak torrent jasne hovorí, že ide napr. o S01E10, a my hľadáme Sériu 3, okamžite ho vyradíme
     const seMatch = nazovTorrentu.match(/\bS(\d{1,2})[._-]?E\d{1,3}\b/i);
-    if (seMatch && parseInt(seMatch[1], 10) !== seria) return false;
+    if (seMatch && parseInt(seMatch[1], 10) !== seria) logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`); return false;
 
     // --- PRIDANÁ OPRAVA: Kontrola formátu 1x01 ---
     const xMatch = nazovTorrentu.match(/\b(\d{1,2})x\d{1,3}\b/i);
-    if (xMatch && parseInt(xMatch[1], 10) !== seria) return false;
+    if (xMatch && parseInt(xMatch[1], 10) !== seria) logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`); return false;
 
     // Kontrola pre osamotené Sxx (napríklad S01, ale ignoruje, ak nasleduje E)
     const sMatch = nazovTorrentu.match(/\bS(\d{2})(?!E)/i);
-    if (sMatch && parseInt(sMatch[1], 10) !== seria) return false;
+    if (sMatch && parseInt(sMatch[1], 10) !== seria) logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`); return false;
 
     return true;
 }
@@ -461,7 +461,7 @@ function torrentSediSEpizodou(nazov, seria, epizoda) {
         }
     }
 
-    if (toMaZluEpizodu) return false; 
+    if (toMaZluEpizodu) logWarn(`[FILTER OUT] ${t.name} | reason=BASE_MISMATCH`); return false; 
 
     // Explicitná zhoda pre požadovanú epizódu
     if (new RegExp(`S${seriaStr}[._-]?E${epStr}\\b`, "i").test(nazov)) return true;

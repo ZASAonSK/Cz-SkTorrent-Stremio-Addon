@@ -1336,28 +1336,31 @@ if (vlastnyTyp === 'movie' && metaInfo?.titleOriginal) {
     .replace(/\b(19|20)\d{2}\b/g, ' ')
     .replace(/\b(filmy|film|serialy|serial|seril|seria|serie|dokumenty|dokument|tv|kreslene|anime)\b/gi, ' ')
     .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en|cam)\b/gi, ' ')
+    .replace(/[\/|()[\]{}_.:-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  const title = clean(metaInfo.titleOriginal || metaInfo.titleCz || '');
-  const targetYear = metaInfo.yearStart ? String(metaInfo.yearStart) : null;
+  const titleWords = clean(metaInfo.titleOriginal || metaInfo.titleCz || '')
+    .split(' ')
+    .filter(w => w.length >= 3 && !/^\d+$/.test(w));
 
   const before = torrenty.length;
 
   torrenty = torrenty.filter(t => {
     const name = clean(t.name);
     if (!name) return false;
-    if (!name.includes(title)) return false;
 
-    const sequelHits = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
-    const hasBadSequel = sequelHits.some(n => n >= 5);
+    const hasBase = titleWords.every(w => name.includes(w));
+    if (!hasBase) return false;
 
-    if (targetYear && name.includes(targetYear)) return true;
+    const sequel = name.match(/\b(\d{1,2})\b/g)?.map(Number) || [];
+    const hasBadSequel = sequel.some(n => n >= 5);
 
-    if (/\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name)) {
-      return !hasBadSequel;
-    }
+    const isPack = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name);
+    const year = metaInfo.yearStart ? String(metaInfo.yearStart) : null;
+    if (year && name.includes(year)) return true;
 
+    if (isPack) return !hasBadSequel;
     return !hasBadSequel;
   });
 

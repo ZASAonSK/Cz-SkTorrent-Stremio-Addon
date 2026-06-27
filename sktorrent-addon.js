@@ -692,16 +692,14 @@ if (videoSubory.length === 1) {
       .filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.path))
       .sort((a, b) => (b.length || 0) - (a.length || 0));
 
-    if (videoSubory.length > 0) {
-      // Ak je v torrente viacero videí (teda je to pack), vyberieme najväčší video súbor
-      najdenyIndex = videoSubory[0].index;
-      najdenyNazovSuboru = videoSubory[0].path;
-    } else if (torrentData.files.length > 0) {
-      // Záloha: ak torrent nemá štandardnú video koncovku, zoberieme jednoducho najväčší súbor v torrente
-      const najvacsiSubor = [...torrentData.files].sort((a, b) => (b.length || 0) - (a.length || 0))[0];
-      najdenyIndex = najvacsiSubor.index;
-      najdenyNazovSuboru = najvacsiSubor.path;
-    }
+if (videoSubory.length > 0) {
+    najdenyIndex = videoSubory[0].index;
+    najdenyNazovSuboru = videoSubory[0].path;
+} else if (torrentData.files.length > 0) {
+    const najvacsiSubor = [...torrentData.files].sort((a, b) => (b.length || 0) - (a.length || 0))[0];
+    najdenyIndex = najvacsiSubor.index;
+    najdenyNazovSuboru = najvacsiSubor.path;
+}
   }
     
 

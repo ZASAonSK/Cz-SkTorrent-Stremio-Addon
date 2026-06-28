@@ -192,15 +192,15 @@ function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
     const rawName = odstranDiakritiku(String(torrentName || '')).toLowerCase();
     const range = rawName.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
 
-    if (metaInfo?.yearStart && !pack && !range) {
-        const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
-        if (years.length > 0 && !years.includes(metaInfo.yearStart)) {
-            if (!/\b(cam|ts|tc)\b/i.test(name)) {
-                logWarn(`[FILTER OUT] ${torrentName} | reason=YEAR_MISMATCH`);
-                return false;
-            }
-        }
+if (metaInfo?.yearStart && !pack && !range) {
+    const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
+    if (years.length > 0 && !years.includes(metaInfo.yearStart)) {
+        // CAM výnimka platí len keď rok CHÝBA v názve
+        // Ak je rok explicitne uvedený a nesedí → vyhodiť aj CAM
+        logWarn(`[FILTER OUT] ${torrentName} | reason=YEAR_MISMATCH`);
+        return false;
     }
+}
 
     if (sequelNumber !== null) {
         if (pack) return true;

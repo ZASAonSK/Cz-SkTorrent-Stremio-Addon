@@ -228,6 +228,12 @@ if (metaInfo?.yearStart && !pack && !range) {
         return false;
     }
 
+    // ZMENENÉ: pack bez čísla nie je relevantný pre nenumerovaný film
+    if (pack) {
+        logWarn(`[FILTER OUT] ${torrentName} | reason=PACK_NO_SEQUEL`);
+        return false;
+    }
+
     return true;
 }
 

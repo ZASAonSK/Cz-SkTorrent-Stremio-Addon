@@ -229,6 +229,11 @@ function vyfiltrujMovieTorrenty(torrenty, metaInfo, zakladneNazvy = []) {
     logWarn(`MOVIE FILTER: ${before} -> ${filtered.length}`);
     return filtered;
 }
+function romanToInt(str) {
+    const map = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+    return map[str.toLowerCase()] || null;
+}
+
 function movieFileMatches(filePath, meta, zakladneNazvy = []) {
     const normalize = (s) => odstranDiakritiku(String(s || ''))
         .toLowerCase()
@@ -237,7 +242,6 @@ function movieFileMatches(filePath, meta, zakladneNazvy = []) {
         .trim();
 
     const name = normalize(filePath);
-
     const targets = [
         meta?.titleOriginal,
         meta?.titleCz,
@@ -263,9 +267,16 @@ function movieFileMatches(filePath, meta, zakladneNazvy = []) {
     if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(name)) return false;
 
     if (sequelNumber !== null) {
+        // Arabské čísla
         const nums = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
         if (nums.includes(sequelNumber)) return true;
-        if (sequelNumber === 2 && /\bii\b/i.test(name)) return true;
+
+        // Rímske číslice (I až X)
+        const romanMatches = [...name.matchAll(/\b(x|ix|viii|vii|vi|v|iv|iii|ii|i)\b/gi)];
+        for (const rm of romanMatches) {
+            if (romanToInt(rm[1]) === sequelNumber) return true;
+        }
+
         return false;
     }
 

@@ -199,6 +199,15 @@ if (metaInfo?.yearStart && !pack && !range) {
         logWarn(`[FILTER OUT] ${torrentName} | reason=YEAR_MISMATCH`);
         return false;
     }
+    // NOVÉ: ak hľadáme nenumerovaný film (sequelNumber=null) a pack nemá rok vôbec,
+    // ale obsahuje slovo "komplet/bijak/kolekcia" → vyhodiť
+    if (years.length === 0 && sequelNumber === null) {
+        const jeKolekcia = /\b(komplet|bijak|kolekce|kolekcia|collection|saga|trilogy|desnej)\b/i.test(name);
+        if (jeKolekcia) {
+            logWarn(`[FILTER OUT] ${torrentName} | reason=COLLECTION_NO_YEAR`);
+            return false;
+        }
+    }
 }
 
     if (sequelNumber !== null) {

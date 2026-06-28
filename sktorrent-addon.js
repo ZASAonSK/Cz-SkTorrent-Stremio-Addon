@@ -200,14 +200,14 @@ if (metaInfo?.yearStart && !pack && !range) {
     }
 }
 
-    if (sequelNumber !== null) {
-        if (pack) return true;
+if (sequelNumber !== null) {
+    if (pack) return true;
 
-        if (range) {
-            const lo = parseInt(range[1], 10);
-            const hi = parseInt(range[2], 10);
-            if (sequelNumber >= lo && sequelNumber <= hi) return true;
-        }
+    if (range) {
+        const lo = parseInt(range[1], 10);
+        const hi = parseInt(range[2], 10);
+        if (sequelNumber >= lo && sequelNumber <= hi) return true;
+    }
 
         const digitMatches = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
         if (digitMatches.includes(sequelNumber)) return true;

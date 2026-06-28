@@ -181,33 +181,35 @@ function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
     if (!baseTitle) return true;
 
     const escapedBase = escapeRegExp(baseTitle);
-
     if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(name)) {
         logWarn(`[FILTER OUT] ${torrentName} | reason=BASE_MISMATCH`);
         return false;
     }
 
-const pack  = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name);
-const range = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
+    const pack = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name);
 
-if (metaInfo?.yearStart && !pack && !range) {
-    const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
-    if (years.length > 0 && !years.includes(metaInfo.yearStart)) {
-        if (!/\b(cam|ts|tc)\b/i.test(name)) {
-            logWarn(`[FILTER OUT] ${torrentName} | reason=YEAR_MISMATCH`);
-            return false;
+    // Rozsah checkujeme na PÔVODNOM názve (pred normalize), lebo normalize maže pomlčky
+    const rawName = odstranDiakritiku(String(torrentName || '')).toLowerCase();
+    const range = rawName.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
+
+    if (metaInfo?.yearStart && !pack && !range) {
+        const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
+        if (years.length > 0 && !years.includes(metaInfo.yearStart)) {
+            if (!/\b(cam|ts|tc)\b/i.test(name)) {
+                logWarn(`[FILTER OUT] ${torrentName} | reason=YEAR_MISMATCH`);
+                return false;
+            }
         }
     }
-}
 
-if (sequelNumber !== null) {
-    if (pack) return true;
+    if (sequelNumber !== null) {
+        if (pack) return true;
 
-    if (range) {
-        const lo = parseInt(range[1], 10);
-        const hi = parseInt(range[2], 10);
-        if (sequelNumber >= lo && sequelNumber <= hi) return true;
-    }
+        if (range) {
+            const lo = parseInt(range[1], 10);
+            const hi = parseInt(range[2], 10);
+            if (sequelNumber >= lo && sequelNumber <= hi) return true;
+        }
 
         const digitMatches = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
         if (digitMatches.includes(sequelNumber)) return true;

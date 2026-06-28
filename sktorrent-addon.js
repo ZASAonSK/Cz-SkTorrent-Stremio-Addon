@@ -187,10 +187,10 @@ function movieTorrentMatches(torrentName, metaInfo, zakladneNazvy = []) {
         return false;
     }
 
-const pack = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name);
+const pack  = /\b(komplet|pack|kolekce|kolekcia|collection|saga|trilogy|quadrilogy)\b/i.test(name);
 const range = name.match(/\b(\d{1,2})\s*[-–]\s*(\d{1,2})\b/);
 
-if (metaInfo?.yearStart && !pack) {
+if (metaInfo?.yearStart && !pack && !range) {
     const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
     if (years.length > 0 && !years.includes(metaInfo.yearStart)) {
         if (!/\b(cam|ts|tc)\b/i.test(name)) {

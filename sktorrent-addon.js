@@ -227,6 +227,53 @@ function vyfiltrujMovieTorrenty(torrenty, metaInfo, zakladneNazvy = []) {
     logWarn(`MOVIE FILTER: ${before} -> ${filtered.length}`);
     return filtered;
 }
+function movieFileMatches(filePath, meta, zakladneNazvy = []) {
+    const normalize = (s) => odstranDiakritiku(String(s || ''))
+        .toLowerCase()
+        .replace(/[._\-()[\]{}:]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const name = normalize(filePath);
+
+    const targets = [
+        meta?.titleOriginal,
+        meta?.titleCz,
+        ...(Array.isArray(zakladneNazvy) ? zakladneNazvy : [])
+    ].filter(Boolean).map(normalize);
+
+    let baseTitle = null;
+    let sequelNumber = null;
+
+    for (const t of targets) {
+        const clean = t.replace(/\b(19|20)\d{2}\b/g, ' ').replace(/\s+/g, ' ').trim();
+        const m = clean.match(/^(.*?)(?:\s+(\d+))?$/);
+        if (m && m[1]) {
+            baseTitle = m[1].trim();
+            sequelNumber = m[2] ? parseInt(m[2], 10) : null;
+            break;
+        }
+    }
+
+    if (!baseTitle) return false;
+
+    const escapedBase = escapeRegExp(baseTitle);
+    if (!new RegExp(`\\b${escapedBase}\\b`, 'i').test(name)) return false;
+
+    if (sequelNumber !== null) {
+        const nums = [...name.matchAll(/\b(\d{1,2})\b/g)].map(m => parseInt(m[1], 10));
+        if (nums.includes(sequelNumber)) return true;
+        if (sequelNumber === 2 && /\bii\b/i.test(name)) return true;
+        return false;
+    }
+
+    if (meta?.yearStart) {
+        const years = [...name.matchAll(/\b(19|20)\d{2}\b/g)].map(m => parseInt(m[0], 10));
+        if (years.length > 0 && !years.includes(meta.yearStart)) return false;
+    }
+
+    return true;
+}
 
 // ÚPLNE ZMENENÁ FUNKCIA (bez použitia withCache z tvojej Map)
 async function overitTorboxCache(infoHashes, torboxKey) {
@@ -820,21 +867,26 @@ if (videoSubory.length === 1) {
     }
 }
   // --- VYHADANIE SBORU PRE FILMY ---
-  } else {
-    // Vyfiltrujeme video sbory
+} else {
     const videoSubory = torrentData.files
-      .filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.path))
-      .sort((a, b) => (b.length || 0) - (a.length || 0));
+        .filter(f => /\.(mp4|mkv|avi|m4v)$/i.test(f.path))
+        .sort((a, b) => (b.length || 0) - (a.length || 0));
 
-if (videoSubory.length > 0) {
-    najdenyIndex = videoSubory[0].index;
-    najdenyNazovSuboru = videoSubory[0].path;
-} else if (torrentData.files.length > 0) {
-    const najvacsiSubor = [...torrentData.files].sort((a, b) => (b.length || 0) - (a.length || 0))[0];
-    najdenyIndex = najvacsiSubor.index;
-    najdenyNazovSuboru = najvacsiSubor.path;
+    if (videoSubory.length > 0) {
+        const matchingFile = videoSubory.find(f => movieFileMatches(f.path, meta));
+        if (matchingFile) {
+            najdenyIndex = matchingFile.index;
+            najdenyNazovSuboru = matchingFile.path;
+        } else {
+            najdenyIndex = videoSubory[0].index;
+            najdenyNazovSuboru = videoSubory[0].path;
+        }
+    } else if (torrentData.files.length > 0) {
+        const najvacsiSubor = [...torrentData.files].sort((a, b) => (b.length || 0) - (a.length || 0))[0];
+        najdenyIndex = najvacsiSubor.index;
+        najdenyNazovSuboru = najvacsiSubor.path;
+    }
 }
-  }
     
 
     // --- FORMÁTOVANIE METADÁT PRE TITLE ---

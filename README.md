@@ -6,7 +6,7 @@ Neoficiálny Stremio doplnok pre vyhľadávanie a streamovanie filmov a seriálo
 
 Addon si môžeš nainštalovať a nakonfigurovať na jednej z týchto verejne bežiacich inštancií:
 
-🔗 **[Genez.io Inštancia](https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io/)**  
+🔗 **[Genez.io Inštancia Nefunkčné](https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io/)**  
 🔗 **[Koyeb Inštancia](https://managerial-karol-zasaonsk-d57eb595.koyeb.app/)**  
 
 *Vyber si ktorúkoľvek, obe obsahujú rovnakú verziu addonu.*

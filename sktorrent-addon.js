@@ -106,6 +106,31 @@ function formatBytes(bytes) {
     while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
     return `${n.toFixed(i >= 2 ? 2 : 0)} ${u[i]}`;
 }
+
+function torrentValueToString(value) {
+    if (!value) return null;
+    if (Buffer.isBuffer(value)) return value.toString();
+    if (typeof value === "string") return value;
+    return String(value);
+}
+
+function extractTorrentTrackers(torrent) {
+    const trackers = [];
+    const addTracker = (value) => {
+        const tracker = torrentValueToString(value);
+        if (tracker && /^https?:\/\//i.test(tracker)) trackers.push(tracker);
+    };
+
+    addTracker(torrent.announce);
+
+    const announceList = torrent["announce-list"];
+    if (Array.isArray(announceList)) {
+        announceList.flat(Infinity).forEach(addTracker);
+    }
+
+    return [...new Set(trackers)];
+}
+
 function normalizeTorrentName(str) {
     return odstranDiakritiku(String(str || ''))
         .toLowerCase()
@@ -781,6 +806,7 @@ async function stiahnutTorrentData(url, userAxios) {
             const torrent = bencode.decode(res.data);
             const info = bencode.encode(torrent.info);
             const infoHash = crypto.createHash("sha1").update(info).digest("hex");
+            const trackers = extractTorrentTrackers(torrent);
 
             let subory = [];
             if (torrent.info.files) {
@@ -796,7 +822,7 @@ async function stiahnutTorrentData(url, userAxios) {
             }
 
             logSuccess(`Successfully parsed .torrent (Hash: ${infoHash}) from ${url}`);
-            return { infoHash, files: subory };
+            return { infoHash, files: subory, trackers };
         } catch (chyba) {
             logError(`Failed to download/parse .torrent from ${url}`, chyba);
             return null;
@@ -1013,6 +1039,7 @@ if (videoSubory.length === 1) {
         sktId: t.id, 
         fileName: cistyNazovSuboru,
         infoHash: torrentData.infoHash,
+        sources: torrentData.trackers || [],
         fileIdx: najdenyIndex === -1 ? 0 : najdenyIndex
     };
 
@@ -1514,7 +1541,12 @@ logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)..
         return res.json({ streams: streamy });
 
 
-    } 
+    }
+
+    const trvanie = Date.now() - startCas;
+    logSuccess(`Stream request finished without TorBox in ${trvanie}ms. Returning ${streamy.length} streams to Stremio.`);
+    res.setHeader('Cache-Control', 'max-age=300, stale-while-revalidate=300, stale-if-error=300');
+    return res.json({ streams: streamy });
 });
 
 

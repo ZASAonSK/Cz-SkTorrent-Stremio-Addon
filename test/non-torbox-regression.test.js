@@ -31,4 +31,9 @@ assert(
     "manifest should use configurable addon identity values"
 );
 
+assert(
+    source.includes("addonOpen") && source.includes("encodeURIComponent(httpUrl)"),
+    "install button should open Stremio through addonOpen with the encoded manifest URL"
+);
+
 console.log("non-TorBox regression checks passed");

@@ -1237,8 +1237,8 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
 
             function openStremio() {
                 var httpUrl = document.getElementById('generated-url').value;
-                var stremioUrl = httpUrl.replace("https://", "stremio://").replace("http://", "stremio://");
-                window.location.assign(stremioUrl);
+                var installUrl = "https://web.stremio.com/#/addons?addonOpen=" + encodeURIComponent(httpUrl);
+                window.location.assign(installUrl);
             }
         </script>
     </body>

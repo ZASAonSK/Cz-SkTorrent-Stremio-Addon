@@ -16,6 +16,8 @@ const cors = require("cors");
 const PORT = process.env.PORT || 7000; 
 // const PUBLIC_URL = "https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io"; 
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`; 
+const ADDON_ID = process.env.ADDON_ID || "org.stremio.skcztorrent.addon";
+const ADDON_NAME = process.env.ADDON_NAME || "Cz-SkTorrent Addon";
 const BASE_URL = "https://sktorrent.eu"; 
 const SEARCH_URL = `${BASE_URL}/torrent/torrents_v2.php`;
 
@@ -118,7 +120,7 @@ function extractTorrentTrackers(torrent) {
     const trackers = [];
     const addTracker = (value) => {
         const tracker = torrentValueToString(value);
-        if (tracker && /^https?:\/\//i.test(tracker)) trackers.push(tracker);
+        if (tracker && /^(https?|udp):\/\//i.test(tracker)) trackers.push(`tracker:${tracker}`);
     };
 
     addTracker(torrent.announce);
@@ -1255,9 +1257,9 @@ const handleManifest = (req, res) => {
     });
 
     res.json({
-        id: "org.stremio.skcztorrent.addon", 
+        id: ADDON_ID, 
         version: "2.0.0",
-        name: "Cz-SkTorrent Addon",
+        name: ADDON_NAME,
         description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
         types: ["movie", "series"],
         catalogs: [],

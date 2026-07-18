@@ -344,10 +344,10 @@ async function pockajNaTorrentFiles(torrentId, torboxKey, maxPokusov = 15, inter
 
         try {
             const tbRefreshRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
+                params: { bypass_cache: true, id: torrentId },
                 headers: { Authorization: `Bearer ${torboxKey}` },
                 timeout: 8000
             });
-
             if (tbRefreshRes.data && tbRefreshRes.data.data) {
                 const zoznamRefresh = Array.isArray(tbRefreshRes.data.data) ? tbRefreshRes.data.data : [tbRefreshRes.data.data];
                 const kandidat = zoznamRefresh.find(t => t.id === torrentId);
@@ -1560,9 +1560,11 @@ app.get('/:config/play/:hash/:seria/:epizoda/:fileName', async (req, res) => {
 
   try {
     // 1. Skontroluj, či torrent už existuje v mylist
-    let mylistRes = await axios.get('https://api.torbox.app/v1/api/torrents/mylist', {
-      headers: { Authorization: `Bearer ${torboxKey}` }, timeout: 8000
-    });
+let mylistRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
+    params: { bypass_cache: true },
+    headers: { Authorization: `Bearer ${torboxKey}` },
+    timeout: 8000
+});
     let zoznam = Array.isArray(mylistRes.data?.data) ? mylistRes.data.data : [mylistRes.data?.data];
     let torrentObj = zoznam.find(t => t && t.hash?.toLowerCase() === hash.toLowerCase());
 

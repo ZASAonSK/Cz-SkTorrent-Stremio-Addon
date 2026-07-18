@@ -335,6 +335,36 @@ async function overitTorboxCache(infoHashes, torboxKey) {
         return {};
     }
 }
+// ===================================================================
+// ČAKANIE NA SPRACOVANIE TORRENTU NA TORBOXE (files pole)
+// ===================================================================
+async function pockajNaTorrentFiles(torrentId, torboxKey, maxPokusov = 15, intervalMs = 2000) {
+    for (let pokus = 0; pokus < maxPokusov; pokus++) {
+        await new Promise(r => setTimeout(r, intervalMs));
+
+        try {
+            const tbRefreshRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
+                headers: { Authorization: `Bearer ${torboxKey}` },
+                timeout: 8000
+            });
+
+            if (tbRefreshRes.data && tbRefreshRes.data.data) {
+                const zoznamRefresh = Array.isArray(tbRefreshRes.data.data) ? tbRefreshRes.data.data : [tbRefreshRes.data.data];
+                const kandidat = zoznamRefresh.find(t => t.id === torrentId);
+
+                if (kandidat && Array.isArray(kandidat.files) && kandidat.files.length > 0) {
+                    logSuccess(`TorBox torrent ${torrentId} pripravený po ${pokus + 1}. pokuse (${kandidat.files.length} súborov).`);
+                    return kandidat;
+                }
+            }
+        } catch (e) {
+            logWarn(`Pokus ${pokus + 1}/${maxPokusov}: mylist request zlyhal (${e.message})`);
+        }
+
+        logWarn(`Pokus ${pokus + 1}/${maxPokusov}: torrent ${torrentId} ešte nemá pripravené súbory, čakám...`);
+    }
+    return null;
+}
 
 // ===================================================================
 // ZÍSKANIE ČSFD LINKU VLASTNÝM RIEŠENÍM (Axios + Cheerio)

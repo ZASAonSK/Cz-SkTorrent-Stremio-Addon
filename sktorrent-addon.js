@@ -338,7 +338,7 @@ async function overitTorboxCache(infoHashes, torboxKey) {
 // ===================================================================
 // ČAKANIE NA SPRACOVANIE TORRENTU NA TORBOXE (files pole)
 // ===================================================================
-async function pockajNaTorrentFiles(torrentId, torboxKey, maxPokusov = 15, intervalMs = 2000) {
+async function pockajNaTorrentFiles(torrentId, torboxKey, maxPokusov = 15, intervalMs = 1500) {
     for (let pokus = 0; pokus < maxPokusov; pokus++) {
         await new Promise(r => setTimeout(r, intervalMs));
 

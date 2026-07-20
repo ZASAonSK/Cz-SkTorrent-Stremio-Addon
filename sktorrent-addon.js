@@ -1605,18 +1605,47 @@ let mylistRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist",
     }
 
     let vybranySubor;
-    if (seria !== undefined && epizoda !== undefined && seria !== 'undefined') {
-      const seriaStr = String(seria).padStart(2, '0');
-      const epStr = String(epizoda).padStart(2, '0');
-      const regexy = [
-        new RegExp(`S${seriaStr}[._-]?E${epStr}\\b`, 'i'),
-        new RegExp(`\\b${seria}x${epStr}\\b`, 'i')
-      ];
-      vybranySubor = videoSubory.find(f => regexy.some(r => r.test(f.name || f.short_name)));
+
+    // 1. POKUS: Hľadajme priamo podľa `fileName` z URL parametra
+    // Očistíme obe strany o diakritiku a špeciálne znaky pre presnú zhodu
+    if (fileName && fileName !== 'undefined') {
+        const hladanyNazov = fileName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        vybranySubor = videoSubory.find(f => {
+            const torboxNazov = (f.name || f.short_name || "").replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            return torboxNazov.includes(hladanyNazov) || hladanyNazov.includes(torboxNazov);
+        });
     }
-    // Fallback: najväčší video súbor (NIE index 0!)
+
+    // 2. POKUS: Ak fileName zlyhá (alebo nie je dodaný), použijeme oveľa bohatšie Regexy z tvojho scrapera
+    if (!vybranySubor && seria !== undefined && epizoda !== undefined && seria !== 'undefined' && seria !== '0') {
+        const epCislo = parseInt(epizoda);
+        const epStr = String(epCislo).padStart(2, "0");
+        const seriaStr = String(seria).padStart(2, "0");
+
+        const rozsireneRegexy = [
+            new RegExp(`S${seriaStr}[._-]?E${epStr}\\b`, "i"),
+            new RegExp(`\\b${seria}x${epStr}\\b`, "i"),
+            new RegExp(`\\b${seria}x0*${epCislo}\\b`, "i"),
+            new RegExp(`S${seriaStr}[._-]?E${epStr}(?![0-9])`, "i"),
+            new RegExp(`Ep(?:isode)?[._\\s]*0*${epCislo}\\b`, "i"),
+            new RegExp(`\\b0*${epCislo}[._\\s-]*(?:Epiz[oó]da|Diel|Časť|Cast)\\b`, "i"),
+            new RegExp(`\\bE${epStr}\\b`, "i"),
+        ];
+
+        for (let r of rozsireneRegexy) {
+            vybranySubor = videoSubory.find(f => r.test(f.name || f.short_name || ""));
+            if (vybranySubor) break;
+        }
+    }
+
+    // 3. FALLBACK NA NAJVÄČŠÍ SÚBOR: Použijeme LEN pre filmy (seria === undefined / '0'), NIE PRE SERIÁLY!
     if (!vybranySubor) {
-      vybranySubor = [...videoSubory].sort((a, b) => (b.size || 0) - (a.size || 0))[0];
+        if (seria === 'undefined' || seria === '0' || !seria) {
+            vybranySubor = [...videoSubory].sort((a, b) => (b.size || 0) - (a.size || 0))[0];
+        } else {
+            // Ak ide o seriál a nenájde to epizódu, vyhodíme chybu, nesťahujeme naslepo iný diel!
+            return res.status(404).send(`V torrente sa nenašla epizóda S${seria}E${epizoda}. TorBox zoznam: ` + videoSubory.map(f=>f.name).join(", "));
+        }
     }
 
     // 5. Získaj priamy streamovací link

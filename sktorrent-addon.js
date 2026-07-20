@@ -1552,7 +1552,7 @@ logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)..
 // TORBOX PROXY ROUTER
 // =========================================================================
 app.get('/:config/play/:hash/:seria/:epizoda/:fileName', async (req, res) => {
-  const { config, hash, seria, epizoda } = req.params;
+  const { config, hash, seria, epizoda, fileName } = req.params;
   const userConfig = decodeConfig(config);
   const torboxKey = userConfig?.torbox;
 

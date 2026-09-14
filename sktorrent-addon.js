@@ -783,7 +783,7 @@ async function ziskatVsetkyNazvyARok(imdbId, vlastnyTyp, tmdbKey) {async functio
         };
     });
 }
-    return withCache(`names_year_v2:${imdbId}`, 21600000, async () => { 
+    
         logApi(`Fetching metadata pre IMDB ID: ${imdbId} (${vlastnyTyp})`);
         const nazvy = new Set();
         
@@ -871,8 +871,7 @@ async function ziskatVsetkyNazvyARok(imdbId, vlastnyTyp, tmdbKey) {async functio
             nazvy: vysledokNazvy, 
             rok: yearStart, 
             meta: { titleOriginal, titleCz, yearStart, yearEnd } 
-        };
-    });
+        };);
 }
 
 // ===================================================================

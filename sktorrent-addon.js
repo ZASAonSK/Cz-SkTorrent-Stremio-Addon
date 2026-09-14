@@ -623,7 +623,166 @@ function parseYearRange(y) {
     return { yearStart: m[1] ? parseInt(m[1]) : null, yearEnd: m[2] ? parseInt(m[2]) : null };
 }
 
-async function ziskatVsetkyNazvyARok(imdbId, vlastnyTyp, tmdbKey) {
+async function ziskatVsetkyNazvyARok(imdbId, vlastnyTyp, tmdbKey) {async function ziskatVsetkyNazvyARok(zdrojId, vlastnyTyp, tmdbKey) {
+    // zdrojId je buď "tt1234567" alebo "tmdb:1399"
+    const isTmdbSource = zdrojId.startsWith("tmdb:");
+    const cacheKey = zdrojId; // stačí ako unikátny cache-key, nemusí byť IMDb
+
+    return withCache(`names_year_v3:${cacheKey}`, 21600000, async () => {
+        logApi(`Fetching metadata pre ID: ${zdrojId} (${vlastnyTyp})`);
+        const nazvy = new Set();
+
+        let titleOriginal = null;
+        let titleCz = null;
+        let yearStart = null;
+        let yearEnd = null;
+        let imdbId = null; // naplní sa len ak sa nájde (voliteľné, pre ČSFD cache)
+        let tmdbId = null;
+
+        const tmdbTyp = vlastnyTyp === "series" ? "tv" : "movie";
+
+        if (isTmdbSource) {
+            tmdbId = zdrojId.split(":")[1];
+
+            if (!tmdbKey) {
+                logWarn(`TMDB ID ${tmdbId} prišlo, ale chýba TMDB API kľúč v konfigurácii.`);
+                return { nazvy: [], rok: null, meta: {} };
+            }
+
+            try {
+                // a) Detail (originálny názov, rok)
+                const det = await axios.get(
+                    `https://api.themoviedb.org/3/${tmdbTyp}/${tmdbId}`,
+                    { params: { api_key: tmdbKey }, timeout: 4000 }
+                );
+
+                if (vlastnyTyp === "series") {
+                    titleOriginal = det.data?.original_name || null;
+                    if (det.data?.name) { nazvy.add(det.data.name); titleCz = det.data.name; }
+                    if (det.data?.first_air_date) yearStart = parseInt(det.data.first_air_date.slice(0, 4));
+                    if (det.data?.last_air_date) yearEnd = parseInt(det.data.last_air_date.slice(0, 4));
+                } else {
+                    titleOriginal = det.data?.original_title || null;
+                    if (det.data?.title) { nazvy.add(det.data.title); titleCz = det.data.title; }
+                    if (det.data?.release_date) yearStart = parseInt(det.data.release_date.slice(0, 4));
+                }
+                if (titleOriginal) nazvy.add(titleOriginal);
+
+                // b) Preklady (CZ/SK/EN názvy)
+                const trans = await axios.get(
+                    `https://api.themoviedb.org/3/${tmdbTyp}/${tmdbId}/translations`,
+                    { params: { api_key: tmdbKey }, timeout: 4000 }
+                );
+                if (trans.data?.translations) {
+                    trans.data.translations.forEach(tr => {
+                        const m = (tr.data || {}).title || (tr.data || {}).name;
+                        if (m && ["cs", "sk", "en"].includes(tr.iso_639_1)) {
+                            nazvy.add(m);
+                            if (tr.iso_639_1 === "cs" && m) titleCz = m;
+                        }
+                    });
+                }
+
+                // c) Skús získať IMDb ID (voliteľné, len navyše pre ČSFD/Cinemeta cache)
+                try {
+                    const ext = await axios.get(
+                        `https://api.themoviedb.org/3/${tmdbTyp}/${tmdbId}/external_ids`,
+                        { params: { api_key: tmdbKey }, timeout: 4000 }
+                    );
+                    if (ext.data?.imdb_id) {
+                        imdbId = ext.data.imdb_id;
+                        logSuccess(`TMDB ${tmdbId} má aj IMDb ID: ${imdbId} (bonus pre Cinemeta/ČSFD).`);
+
+                        // Cinemeta môžeme dotiahnuť len AK imdbId existuje — čisto ako bonus
+                        try {
+                            const cineRes = await axios.get(
+                                `https://v3-cinemeta.strem.io/meta/${vlastnyTyp}/${imdbId}.json`,
+                                { timeout: 4000 }
+                            );
+                            const m = cineRes.data?.meta;
+                            if (m?.aliases) m.aliases.forEach(a => nazvy.add(decode(a).trim()));
+                        } catch (_) { /* Cinemeta nemusí mať dáta, to je OK */ }
+                    } else {
+                        logWarn(`TMDB ${tmdbId} nemá priradené IMDb ID — pokračujem bez neho (OK).`);
+                    }
+                } catch (_) { /* external_ids zlyhalo, ignorujeme */ }
+
+            } catch (e) {
+                logError(`Zlyhalo TMDB fetch pre tmdbId=${tmdbId}`, e);
+                return { nazvy: [], rok: null, meta: {} };
+            }
+
+        } else {
+            // Pôvodná IMDb-first logika (nezmenená) — imdbId = zdrojId
+            imdbId = zdrojId;
+
+            const promises = [
+                axios.get(`https://v3-cinemeta.strem.io/meta/${vlastnyTyp}/${imdbId}.json`, { timeout: 4000 }).catch(() => null)
+            ];
+            if (tmdbKey) {
+                promises.push(
+                    axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, { params: { api_key: tmdbKey, external_source: "imdb_id" }, timeout: 4000 }).catch(() => null)
+                );
+            }
+            const [cineRes, tmdbRes] = await Promise.all(promises);
+
+            if (cineRes && cineRes.data?.meta) {
+                const m = cineRes.data.meta;
+                if (m.name) { nazvy.add(decode(m.name).trim()); titleCz = decode(m.name).trim(); }
+                if (m.original_name) { nazvy.add(decode(m.original_name).trim()); if (!titleOriginal) titleOriginal = decode(m.original_name).trim(); }
+                if (m.aliases) m.aliases.forEach(a => nazvy.add(decode(a).trim()));
+                if (m.year) { const r = parseYearRange(m.year); yearStart = r.yearStart; yearEnd = r.yearEnd; }
+            }
+
+            if (tmdbRes && tmdbRes.data) {
+                if (vlastnyTyp === "series" && tmdbRes.data.tv_results?.length > 0) {
+                    const res = tmdbRes.data.tv_results[0];
+                    tmdbId = res.id;
+                    nazvy.add(res.name);
+                } else if (vlastnyTyp === "movie" && tmdbRes.data.movie_results?.length > 0) {
+                    const res = tmdbRes.data.movie_results[0];
+                    tmdbId = res.id;
+                    nazvy.add(res.title);
+                }
+            }
+
+            if (tmdbKey && tmdbId) {
+                try {
+                    if (vlastnyTyp === "series") {
+                        const det = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}`, { params: { api_key: tmdbKey }, timeout: 4000 });
+                        if (!titleOriginal && det.data?.original_name) titleOriginal = det.data.original_name;
+                        if (!yearStart && det.data?.first_air_date) yearStart = parseInt(det.data.first_air_date.slice(0, 4));
+                        if (!yearEnd && det.data?.last_air_date) yearEnd = parseInt(det.data.last_air_date.slice(0, 4));
+                    } else {
+                        const det = await axios.get(`https://api.themoviedb.org/3/movie/${tmdbId}`, { params: { api_key: tmdbKey }, timeout: 4000 });
+                        if (!titleOriginal && det.data?.original_title) titleOriginal = det.data.original_title;
+                        if (!yearStart && det.data?.release_date) yearStart = parseInt(det.data.release_date.slice(0, 4));
+                    }
+                    const trans = await axios.get(`https://api.themoviedb.org/3/${tmdbTyp}/${tmdbId}/translations`, { params: { api_key: tmdbKey }, timeout: 4000 });
+                    if (trans.data?.translations) {
+                        trans.data.translations.forEach(tr => {
+                            const m = (tr.data || {}).title || (tr.data || {}).name;
+                            if (m && ["cs", "sk", "en"].includes(tr.iso_639_1)) {
+                                nazvy.add(m);
+                                if (tr.iso_639_1 === "cs" && m) titleCz = m;
+                            }
+                        });
+                    }
+                } catch (e) { /* ignore */ }
+            }
+        }
+
+        if (!titleOriginal) titleOriginal = titleCz;
+
+        const vysledokNazvy = [...nazvy].filter(Boolean).filter(t => !t.toLowerCase().startsWith("výsledky"));
+        return {
+            nazvy: vysledokNazvy,
+            rok: yearStart,
+            meta: { titleOriginal, titleCz, yearStart, yearEnd },
+            imdbId // môže byť null, ak titul na IMDb nie je — to je OK
+        };
+    });
+}
     return withCache(`names_year_v2:${imdbId}`, 21600000, async () => { 
         logApi(`Fetching metadata pre IMDB ID: ${imdbId} (${vlastnyTyp})`);
         const nazvy = new Set();
@@ -1265,7 +1424,7 @@ const handleManifest = (req, res) => {
         types: ["movie", "series"],
         catalogs: [],
         resources: ["stream"],
-        idPrefixes: ["tt"],
+        idPrefixes: ["tt", "tmdb"],
         behaviorHints: {
             configurable: true,
             configurationRequired: false
@@ -1308,11 +1467,34 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     const epizoda = (jeToSerialPodlaId && eRaw) ? parseInt(eRaw) : undefined;
     const vlastnyTyp = jeToSerialPodlaId ? "series" : "movie";
 
-    // 1. ZÍSKAME NÁZVY A ROK a META
-    const metaData = await ziskatVsetkyNazvyARok(imdbId, vlastnyTyp, userConfig.tmdb);
-    const suroveNazvy = metaData?.nazvy || [];
-    const vydanyRok = metaData?.rok;
-    const metaInfo = metaData?.meta;
+const idParts = id.split(":");
+const isTmdb = idParts[0] === "tmdb";
+
+let zdrojId, seria, epizoda, vlastnyTyp;
+
+if (isTmdb) {
+    const tmdbRawId = idParts[1];
+    const sRaw = idParts[2];
+    const eRaw = idParts[3];
+    vlastnyTyp = (sRaw !== undefined) ? "series" : "movie";
+    seria = sRaw !== undefined ? parseInt(sRaw) : undefined;
+    epizoda = eRaw !== undefined ? parseInt(eRaw) : undefined;
+    zdrojId = `tmdb:${tmdbRawId}`;
+} else {
+    const jeToSerialPodlaId = id.includes(":");
+    const [ttId, sRaw, eRaw] = idParts;
+    zdrojId = ttId;
+    seria = (jeToSerialPodlaId && sRaw) ? parseInt(sRaw) : undefined;
+    epizoda = (jeToSerialPodlaId && eRaw) ? parseInt(eRaw) : undefined;
+    vlastnyTyp = jeToSerialPodlaId ? "series" : "movie";
+}
+
+// 1. ZÍSKAME NÁZVY A ROK a META
+const metaData = await ziskatVsetkyNazvyARok(zdrojId, vlastnyTyp, userConfig.tmdb);
+const suroveNazvy = metaData?.nazvy || [];
+const vydanyRok = metaData?.rok;
+const metaInfo = metaData?.meta;
+const imdbIdPreCsfd = metaData?.imdbId || zdrojId; // fallback na zdrojId ako cache-key
 
     if (!suroveNazvy.length) {
         logWarn(`No metadata names found. Returning empty list.`);
@@ -1332,7 +1514,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     // 2. ČSFD LINK
     // Snažíme sa použiť primárne český názov z metadát pre ČSFD vyhľadávanie
         const hlavnyNazov = metaData?.meta?.titleOriginal || unikatneNazvy[0];
-        const csfdLink = await ziskatCsfdUrl(imdbId, hlavnyNazov, vydanyRok, vlastnyTyp);
+        const csfdLink = await ziskatCsfdUrl(imdbIdPreCsfd, hlavnyNazov, vydanyRok, vlastnyTyp);
     
     if (csfdLink) {
         dotazy.add(csfdLink); 

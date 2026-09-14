@@ -871,7 +871,7 @@ async function ziskatVsetkyNazvyARok(imdbId, vlastnyTyp, tmdbKey) {async functio
             nazvy: vysledokNazvy, 
             rok: yearStart, 
             meta: { titleOriginal, titleCz, yearStart, yearEnd } 
-        };);
+        };
 }
 
 // ===================================================================

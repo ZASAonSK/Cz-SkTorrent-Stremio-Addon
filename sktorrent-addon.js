@@ -1461,11 +1461,6 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     const userAxios = getFastAxios(normalizedConfig);
     console.log(`\n====== 🎬 Hľadám pre UID: ${normalizedConfig.uid} | id='${id}' ======`);
 
-    const jeToSerialPodlaId = id.includes(":");
-    const [imdbId, sRaw, eRaw] = id.split(":");
-    const seria = (jeToSerialPodlaId && sRaw) ? parseInt(sRaw) : undefined;
-    const epizoda = (jeToSerialPodlaId && eRaw) ? parseInt(eRaw) : undefined;
-    const vlastnyTyp = jeToSerialPodlaId ? "series" : "movie";
 
 const idParts = id.split(":");
 const isTmdb = idParts[0] === "tmdb";

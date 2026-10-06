@@ -1,126 +1,32 @@
-// SKTorrent Addon v2.0.0 + TORBOX + ČSFD
+// SKTorrent Stremio/Nuvio Addon v3.0.0 + TorBox + ČSFD + TMDB
+require("dotenv").config();
 const { addonBuilder } = require("stremio-addon-sdk");
-const { decode } = require("entities");
 const axios = require("axios");
-const cheerio = require("cheerio");
-const bencode = require("bncode");
-const crypto = require("crypto");
-const http = require("http");
-const https = require("https");
 const express = require("express");
 const FormData = require("form-data");
 const path = require("path");
 const cors = require("cors"); 
+const {
+    decodeConfig, encodeConfig, escapeRegExp, formatBytes, getFastAxios, getTime, langToFlag,
+    logApi, logError, logInfo, logSuccess, logWarn, normalizeTorrentName,
+    odstranDiakritiku, pLimit, skratNazov, withCache
+} = require("./lib/common");
+const { overitTorboxCache, pockajNaTorrentFiles } = require("./lib/torbox");
+const { hladatTorrenty, stiahnutSurovyTorrent, stiahnutTorrentData } = require("./lib/sktorrent");
+const { ziskatVsetkyNazvyARok } = require("./lib/metadata");
+const { ziskatCsfdUrl } = require("./lib/csfd");
+const { movieFileMatches, vyfiltrujMovieTorrenty } = require("./lib/movie-matcher");
+const { torrentSediSEpizodou, torrentSedisSeriou } = require("./lib/episode-matcher");
+const { vytvoritStream } = require("./lib/stream-builder");
 // const { csfd } = require('node-csfd-api'); 
 
 const PORT = process.env.PORT || 7000; 
 // const PUBLIC_URL = "https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io"; 
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`; 
 const BASE_URL = "https://sktorrent.eu"; 
-const SEARCH_URL = `${BASE_URL}/torrent/torrents_v2.php`;
-
-const agentOptions = { keepAlive: true, maxSockets: 50 };
-
-// ===================================================================
-// LOGOVACÍ SYSTÉM
-// ===================================================================
-function getTime() {
-    return new Date().toISOString().replace('T', ' ').substring(0, 19);
-}
-
-function logInfo(msg) { console.log(`[${getTime()}] ℹ️ INFO: ${msg}`); }
-function logSuccess(msg) { console.log(`[${getTime()}] ✅ SUCCESS: ${msg}`); }
-function logWarn(msg) { console.warn(`[${getTime()}] ⚠️ WARN: ${msg}`); }
-function logError(msg, err = "") { console.error(`[${getTime()}] ❌ ERROR: ${msg}`, err ? err.message || err : ""); }
-function logCache(msg) { console.log(`[${getTime()}] 📦 CACHE: ${msg}`); }
-function logApi(msg) { console.log(`[${getTime()}] 🌐 API: ${msg}`); }
-
-// ===================================================================
-// CACHE a CONCURRENCY SYSTÉM
-// ===================================================================
-const cache = new Map(); // Nechame tu len aby to nehodilo error ak sa na to nieco iné odkazuje
-
-async function withCache(key, ttlMs, fetcher) {
-    logCache(`BYPASS CACHE - Ziskavam data nazivo pre: ${key}`);
-    try {
-        // Zavoláme priamo funkciu na ziskanie dat, do pamate nic neukladame
-        const data = await fetcher();
-        return data;
-    } catch (error) {
-        logError(`Failed to fetch key (no cache): ${key}`, error);
-        return null;
-    }
-}
 
 
-function pLimit(limit) {
-    let active = 0; const q = [];
-    const next = () => {
-        if (active >= limit || q.length === 0) return;
-        active++;
-        const { fn, resolve, reject } = q.shift();
-        fn().then(resolve, reject).finally(() => { active--; next(); });
-    };
-    return (fn) => new Promise((resolve, reject) => { q.push({ fn, resolve, reject }); next(); });
-}
-
-// ===================================================================
-// POMOCNÉ FUNKCIE PRE CONFIG A TEXT
-// ===================================================================
-function decodeConfig(configString) {
-    try {
-        if (!configString || configString.includes(".json")) return null;
-        let base64 = configString.replace(/-/g, '+').replace(/_/g, '/');
-        while (base64.length % 4) { base64 += '='; }
-        return JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-    } catch (e) {
-        logWarn(`Failed to decode config: ${configString}`);
-        return null;
-    }
-}
-
-function getFastAxios(userConfig) {
-    const { uid, pass } = userConfig;
-    return axios.create({
-        timeout: 5000, 
-        httpAgent: new http.Agent(agentOptions),
-        httpsAgent: new https.Agent(agentOptions),
-        headers: {
-            "User-Agent": "Mozilla/5.0",
-            "Cookie": `uid=${uid}; pass=${pass}`,
-            "Referer": BASE_URL,
-            "Connection": "keep-alive"
-        }
-    });
-}
-
-const langToFlag = { CZ: "🇨🇿", SK: "🇸🇰", EN: "🇬🇧", US: "🇺🇸", DE: "🇩🇪", FR: "🇫🇷", IT: "🇮🇹", ES: "🇪🇸", RU: "🇷🇺", PL: "🇵🇱", HU: "🇭🇺", JP: "🇯🇵" };
-
-function odstranDiakritiku(str) { return str.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
-function skratNazov(title, pocetSlov = 3) { return title.split(/\s+/).slice(0, pocetSlov).join(" "); }
-
-function formatBytes(bytes) {
-    if (!bytes || bytes <= 0) return "?";
-    const u = ["B", "KB", "MB", "GB", "TB"];
-    let i = 0; let n = bytes;
-    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-    return `${n.toFixed(i >= 2 ? 2 : 0)} ${u[i]}`;
-}
-function normalizeTorrentName(str) {
-    return odstranDiakritiku(String(str || ''))
-        .toLowerCase()
-        .replace(/stiahni si/gi, ' ')
-        .replace(/[._\-()[\]{}:]+/g, ' ')
-        .replace(/\b(1080p|720p|2160p|4k|hdr|web-?dl|webrip|brrip|bluray|dvdrip|tvrip|uhd|fhd|hevc|x265|x264|h264|h265|cam|cz|sk|en)\b/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-function escapeRegExp(str) {
-    return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function ziskajMovieTarget(metaInfo, zakladneNazvy = []) {
+/*function ziskajMovieTarget(metaInfo, zakladneNazvy = []) {
     const kandidati = [
         metaInfo?.titleOriginal,
         metaInfo?.titleCz,
@@ -302,151 +208,6 @@ function movieFileMatches(filePath, meta, zakladneNazvy = []) {
     return true;
 }
 
-// ÚPLNE ZMENENÁ FUNKCIA (bez použitia withCache z tvojej Map)
-async function overitTorboxCache(infoHashes, torboxKey) {
-    if (!torboxKey || !infoHashes || infoHashes.length === 0) return {};
-    
-    // TOTO JE TA OPRAVA: Najprv vyfiltruje vsetko co nie je undefined/null a az potom robi toLowerCase
-    const platneHashe = infoHashes.filter(h => h && typeof h === 'string');
-    if (platneHashe.length === 0) return {};
-
-    const unikatneHashe = [...new Set(platneHashe)].map(h => h.toLowerCase());
-    const hashString = unikatneHashe.sort().join(",");
-    
-    logApi(`Checking TorBox cache directly for ${unikatneHashe.length} hashes`);
-    try {
-        const res = await axios.get(`https://api.torbox.app/v1/api/torrents/checkcached`, {
-            params: { hash: hashString, format: "list" },
-            headers: { "Authorization": `Bearer ${torboxKey}` },
-            timeout: 5000
-        });
-        
-        const cacheMap = {};
-        if (res.data && res.data.success && res.data.data) {
-            const poleDat = Array.isArray(res.data.data) ? res.data.data : [res.data.data];
-            poleDat.forEach(item => { 
-                if (item && item.hash) cacheMap[item.hash.toLowerCase()] = true; 
-            });
-        }
-        logSuccess(`TorBox cache check complete. Found ${Object.keys(cacheMap).length} cached items.`);
-        return cacheMap;
-    } catch (error) {
-        logError("TorBox cache check failed", error);
-        return {};
-    }
-}
-// ===================================================================
-// ČAKANIE NA SPRACOVANIE TORRENTU NA TORBOXE (files pole)
-// ===================================================================
-async function pockajNaTorrentFiles(torrentId, torboxKey, maxPokusov = 15, intervalMs = 1500) {
-    for (let pokus = 0; pokus < maxPokusov; pokus++) {
-        await new Promise(r => setTimeout(r, intervalMs));
-
-        try {
-            const tbRefreshRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
-                params: { bypass_cache: true, id: torrentId },
-                headers: { Authorization: `Bearer ${torboxKey}` },
-                timeout: 8000
-            });
-            if (tbRefreshRes.data && tbRefreshRes.data.data) {
-                const zoznamRefresh = Array.isArray(tbRefreshRes.data.data) ? tbRefreshRes.data.data : [tbRefreshRes.data.data];
-                const kandidat = zoznamRefresh.find(t => t.id === torrentId);
-
-                if (kandidat && Array.isArray(kandidat.files) && kandidat.files.length > 0) {
-                    logSuccess(`TorBox torrent ${torrentId} pripravený po ${pokus + 1}. pokuse (${kandidat.files.length} súborov).`);
-                    return kandidat;
-                }
-            }
-        } catch (e) {
-            logWarn(`Pokus ${pokus + 1}/${maxPokusov}: mylist request zlyhal (${e.message})`);
-        }
-
-        logWarn(`Pokus ${pokus + 1}/${maxPokusov}: torrent ${torrentId} ešte nemá pripravené súbory, čakám...`);
-    }
-    return null;
-}
-
-// ===================================================================
-// ZÍSKANIE ČSFD LINKU VLASTNÝM RIEŠENÍM (Axios + Cheerio)
-// ===================================================================
-async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
-    return withCache(`csfd_url_v2:${imdbId}`, 86400000, async () => {
-        logApi(`Hľadám ČSFD dáta (vlastný scraper) pre IMDB: ${imdbId} (Názov: ${nazov}, Rok: ${rok}, Typ: ${vlastnyTyp})`);
-        try {
-            const query = encodeURIComponent(nazov);
-            const searchUrl = `https://www.csfd.cz/hledat/?q=${query}`;
-            
-            // 1. Odošleme požiadavku s prehliadačovými hlavičkami
-            const res = await axios.get(searchUrl, {
-                headers: {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                    "Accept-Language": "sk,cs;q=0.9,en-US;q=0.8,en;q=0.7"
-                },
-                timeout: 6000
-            });
-
-            // 2. ČSFD nás niekedy pri presnej zhode okamžite presmeruje na profil filmu/seriálu
-            const finalUrl = res.request?.res?.responseUrl;
-            if (finalUrl && finalUrl.includes("/film/")) {
-                logSuccess(`ČSFD priamo presmerovalo na: ${finalUrl}`);
-                return finalUrl;
-            }
-
-            // 3. Ak sme na stránke s výsledkami hľadania, zanalyzujeme štruktúru cez Cheerio
-            const $ = cheerio.load(res.data);
-            let najdeneVysledky = [];
-
-            $('.article-header').each((i, el) => {
-                const linkElement = $(el).find('a.film-title-name');
-                const urlPath = linkElement.attr('href');
-                const rawInfo = $(el).find('.info').text() || ""; 
-                
-                if (urlPath && urlPath.includes('/film/')) {
-                    // Skúsime nájsť rok v zátvorke, napr. (2009) alebo (seriál) (2010)
-                    const rokMatch = rawInfo.match(/\b(19|20)\d{2}\b/);
-                    const zaznamRok = rokMatch ? parseInt(rokMatch[0]) : null;
-                    
-                    // Rozpoznanie, či ide o seriál
-                    const jeSerial = rawInfo.toLowerCase().includes('seriál') || rawInfo.toLowerCase().includes('série');
-                    
-                    najdeneVysledky.push({
-                        url: urlPath.startsWith("http") ? urlPath : `https://www.csfd.cz${urlPath}`,
-                        rok: zaznamRok,
-                        jeSerial: jeSerial
-                    });
-                }
-            });
-
-            if (najdeneVysledky.length === 0) {
-                logWarn(`Vlastný scraper nenašiel žiadne výsledky pre: ${nazov}`);
-                return null;
-            }
-
-            // 4. Zoradíme a filtrujeme výsledky podľa typu (Filmy vs Seriály)
-            let filtrovane = najdeneVysledky;
-            if (vlastnyTyp === "series") {
-                const serialy = najdeneVysledky.filter(v => v.jeSerial);
-                if (serialy.length > 0) filtrovane = serialy;
-            } else if (vlastnyTyp === "movie") {
-                const filmy = najdeneVysledky.filter(v => !v.jeSerial);
-                if (filmy.length > 0) filtrovane = filmy;
-            }
-
-            // 5. Nájdeme najlepšiu zhodu roka (+/- 1 rok)
-            let najdeny = filtrovane.find(v => v.rok === rok || v.rok === rok - 1 || v.rok === rok + 1);
-            if (!najdeny) najdeny = filtrovane[0]; // Ak sa rok nenašiel, vrátime prvý najlepší výsledok
-
-            logSuccess(`Úspešne nájdené ČSFD URL (vlastný scraper): ${najdeny.url}`);
-            return najdeny.url;
-
-        } catch (error) {
-            logError(`Chyba pri vlastnom získavaní ČSFD URL pre ${nazov}`, error);
-            return null;
-        }
-    });
-}
-
 // ===================================================================
 // ZÍSKANIE ČSFD LINKU CEZ node-csfd-api
 // ===================================================================
@@ -488,7 +249,9 @@ async function ziskatCsfdUrl(imdbId, nazov, rok, vlastnyTyp) {
 // ===================================================================
 // FILTRE PRE NÁZVY A SERIÁLY
 // ===================================================================
-function torrentSedisSeriou(nazovTorrentu, seria) {
+*/
+
+/*function torrentSedisSeriou(nazovTorrentu, seria) {
     // 1. Zistíme, či ide o rozsah sérií (vrátane zápisov ako "1. - 4. serie").
     // Ak je to rozsah (napr. S01-S03), necháme ho prejsť.
     if (
@@ -612,310 +375,9 @@ if (toMaZluEpizodu) {
 }
 
 
-// ===================================================================
-// Získanie názvov (Súbežne TMDB + Cinemeta) a ADVANCED METADATA
-// ===================================================================
-function parseYearRange(y) {
-    if (!y) return { yearStart: null, yearEnd: null };
-    const s = String(y).trim();
-    const m = s.match(/^(\d{4})(?:\s*-\s*(\d{4})?)?$/);
-    if (!m) return { yearStart: null, yearEnd: null };
-    return { yearStart: m[1] ? parseInt(m[1]) : null, yearEnd: m[2] ? parseInt(m[2]) : null };
-}
+*/
 
-async function ziskatVsetkyNazvyARok(zdrojId, vlastnyTyp, tmdbKey) {
-    // zdrojId je buď "tt1234567" alebo "tmdb:1399"
-    const isTmdbSource = zdrojId.startsWith("tmdb:");
-    const cacheKey = zdrojId; // stačí ako unikátny cache-key, nemusí byť IMDb
-
-    return withCache(`names_year_v3:${cacheKey}`, 21600000, async () => {
-        logApi(`Fetching metadata pre ID: ${zdrojId} (${vlastnyTyp})`);
-        const nazvy = new Set();
-
-        let titleOriginal = null;
-        let titleCz = null;
-        let yearStart = null;
-        let yearEnd = null;
-        let imdbId = null; // naplní sa len ak sa nájde (voliteľné, pre ČSFD cache)
-        let tmdbId = null;
-
-        const tmdbTyp = vlastnyTyp === "series" ? "tv" : "movie";
-
-        if (isTmdbSource) {
-            tmdbId = zdrojId.split(":")[1];
-
-            if (!tmdbKey) {
-                logWarn(`TMDB ID ${tmdbId} prišlo, ale chýba TMDB API kľúč v konfigurácii.`);
-                return { nazvy: [], rok: null, meta: {} };
-            }
-
-            try {
-                // a) Detail (originálny názov, rok)
-                const det = await axios.get(
-                    `https://api.themoviedb.org/3/${tmdbTyp}/${tmdbId}`,
-                    { params: { api_key: tmdbKey }, timeout: 4000 }
-                );
-
-                if (vlastnyTyp === "series") {
-                    titleOriginal = det.data?.original_name || null;
-                    if (det.data?.name) { nazvy.add(det.data.name); titleCz = det.data.name; }
-                    if (det.data?.first_air_date) yearStart = parseInt(det.data.first_air_date.slice(0, 4));
-                    if (det.data?.last_air_date) yearEnd = parseInt(det.data.last_air_date.slice(0, 4));
-                } else {
-                    titleOriginal = det.data?.original_title || null;
-                    if (det.data?.title) { nazvy.add(det.data.title); titleCz = det.data.title; }
-                    if (det.data?.release_date) yearStart = parseInt(det.data.release_date.slice(0, 4));
-                }
-                if (titleOriginal) nazvy.add(titleOriginal);
-
-                // b) Preklady (CZ/SK/EN názvy)
-                const trans = await axios.get(
-                    `https://api.themoviedb.org/3/${tmdbTyp}/${tmdbId}/translations`,
-                    { params: { api_key: tmdbKey }, timeout: 4000 }
-                );
-                if (trans.data?.translations) {
-                    trans.data.translations.forEach(tr => {
-                        const m = (tr.data || {}).title || (tr.data || {}).name;
-                        if (m && ["cs", "sk", "en"].includes(tr.iso_639_1)) {
-                            nazvy.add(m);
-                            if (tr.iso_639_1 === "cs" && m) titleCz = m;
-                        }
-                    });
-                }
-
-                // c) Skús získať IMDb ID (voliteľné, len navyše pre ČSFD/Cinemeta cache)
-                try {
-                    const ext = await axios.get(
-                        `https://api.themoviedb.org/3/${tmdbTyp}/${tmdbId}/external_ids`,
-                        { params: { api_key: tmdbKey }, timeout: 4000 }
-                    );
-                    if (ext.data?.imdb_id) {
-                        imdbId = ext.data.imdb_id;
-                        logSuccess(`TMDB ${tmdbId} má aj IMDb ID: ${imdbId} (bonus pre Cinemeta/ČSFD).`);
-
-                        // Cinemeta môžeme dotiahnuť len AK imdbId existuje — čisto ako bonus
-                        try {
-                            const cineRes = await axios.get(
-                                `https://v3-cinemeta.strem.io/meta/${vlastnyTyp}/${imdbId}.json`,
-                                { timeout: 4000 }
-                            );
-                            const m = cineRes.data?.meta;
-                            if (m?.aliases) m.aliases.forEach(a => nazvy.add(decode(a).trim()));
-                        } catch (_) { /* Cinemeta nemusí mať dáta, to je OK */ }
-                    } else {
-                        logWarn(`TMDB ${tmdbId} nemá priradené IMDb ID — pokračujem bez neho (OK).`);
-                    }
-                } catch (_) { /* external_ids zlyhalo, ignorujeme */ }
-
-            } catch (e) {
-                logError(`Zlyhalo TMDB fetch pre tmdbId=${tmdbId}`, e);
-                return { nazvy: [], rok: null, meta: {} };
-            }
-
-        } else {
-            // Pôvodná IMDb-first logika (nezmenená) — imdbId = zdrojId
-            imdbId = zdrojId;
-
-            const promises = [
-                axios.get(`https://v3-cinemeta.strem.io/meta/${vlastnyTyp}/${imdbId}.json`, { timeout: 4000 }).catch(() => null)
-            ];
-            if (tmdbKey) {
-                promises.push(
-                    axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, { params: { api_key: tmdbKey, external_source: "imdb_id" }, timeout: 4000 }).catch(() => null)
-                );
-            }
-            const [cineRes, tmdbRes] = await Promise.all(promises);
-
-            if (cineRes && cineRes.data?.meta) {
-                const m = cineRes.data.meta;
-                if (m.name) { nazvy.add(decode(m.name).trim()); titleCz = decode(m.name).trim(); }
-                if (m.original_name) { nazvy.add(decode(m.original_name).trim()); if (!titleOriginal) titleOriginal = decode(m.original_name).trim(); }
-                if (m.aliases) m.aliases.forEach(a => nazvy.add(decode(a).trim()));
-                if (m.year) { const r = parseYearRange(m.year); yearStart = r.yearStart; yearEnd = r.yearEnd; }
-            }
-
-            if (tmdbRes && tmdbRes.data) {
-                if (vlastnyTyp === "series" && tmdbRes.data.tv_results?.length > 0) {
-                    const res = tmdbRes.data.tv_results[0];
-                    tmdbId = res.id;
-                    nazvy.add(res.name);
-                } else if (vlastnyTyp === "movie" && tmdbRes.data.movie_results?.length > 0) {
-                    const res = tmdbRes.data.movie_results[0];
-                    tmdbId = res.id;
-                    nazvy.add(res.title);
-                }
-            }
-
-            if (tmdbKey && tmdbId) {
-                try {
-                    if (vlastnyTyp === "series") {
-                        const det = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}`, { params: { api_key: tmdbKey }, timeout: 4000 });
-                        if (!titleOriginal && det.data?.original_name) titleOriginal = det.data.original_name;
-                        if (!yearStart && det.data?.first_air_date) yearStart = parseInt(det.data.first_air_date.slice(0, 4));
-                        if (!yearEnd && det.data?.last_air_date) yearEnd = parseInt(det.data.last_air_date.slice(0, 4));
-                    } else {
-                        const det = await axios.get(`https://api.themoviedb.org/3/movie/${tmdbId}`, { params: { api_key: tmdbKey }, timeout: 4000 });
-                        if (!titleOriginal && det.data?.original_title) titleOriginal = det.data.original_title;
-                        if (!yearStart && det.data?.release_date) yearStart = parseInt(det.data.release_date.slice(0, 4));
-                    }
-                    const trans = await axios.get(`https://api.themoviedb.org/3/${tmdbTyp}/${tmdbId}/translations`, { params: { api_key: tmdbKey }, timeout: 4000 });
-                    if (trans.data?.translations) {
-                        trans.data.translations.forEach(tr => {
-                            const m = (tr.data || {}).title || (tr.data || {}).name;
-                            if (m && ["cs", "sk", "en"].includes(tr.iso_639_1)) {
-                                nazvy.add(m);
-                                if (tr.iso_639_1 === "cs" && m) titleCz = m;
-                            }
-                        });
-                    }
-                } catch (e) { /* ignore */ }
-            }
-        }
-
-        if (!titleOriginal) titleOriginal = titleCz;
-
-        const vysledokNazvy = [...nazvy].filter(Boolean).filter(t => !t.toLowerCase().startsWith("výsledky"));
-        return {
-            nazvy: vysledokNazvy,
-            rok: yearStart,
-            meta: { titleOriginal, titleCz, yearStart, yearEnd },
-            imdbId // môže byť null, ak titul na IMDb nie je — to je OK
-        };
-    });
-}
-
-// ===================================================================
-// Hľadanie a spracovanie Torrentov
-// ===================================================================
-async function hladatTorrenty(dotaz, userAxios, maxPages = 1) {
-    if (!dotaz || dotaz.trim().length < 2) return [];
-    
-    // Ak hľadáme cez exaktný ČSFD link, chceme načítať viac stránok 
-    // (napr. až 4), pretože seriály môžu mať desiatky epizód zoradených od najnovších.
-    const skutocneMaxPages = dotaz.includes("csfd.cz") ? 20 : maxPages;
-    
-    return withCache(`search_paged_${skutocneMaxPages}:${dotaz}`, 600000, async () => {
-        logApi(`Searching SKTorrent for: "${dotaz}" (Max pages: ${skutocneMaxPages})`);
-        
-        let vsetkyVysledky = [];
-        const videnieIds = new Set();
-        
-        for (let page = 0; page < skutocneMaxPages; page++) {
-            try {
-                logInfo(`Fetching page ${page} for query: ${dotaz}`);
-                const res = await userAxios.get(SEARCH_URL, { 
-                    params: { 
-                        search: dotaz, 
-                        category: 0,
-                        active: 0,
-                        order: 'data',
-                        by: 'DESC',
-                        page: page 
-                    } 
-                });
-                
-                const $ = cheerio.load(res.data);
-                let najdeneNaStranke = 0;
-
-                $('a[href^="details.php"] img').each((i, img) => {
-                    const rodic = $(img).closest("a");
-                    const bunka = rodic.closest("td");
-                    const text = bunka.text().replace(/\s+/g, " ").trim();
-                    const odkaz = rodic.attr("href") || "";
-                    const nazov = rodic.attr("title") || "";
-                    const torrentId = odkaz.split("id=").pop();
-                    
-                    if (videnieIds.has(torrentId)) return; // Prevencia duplikátov
-                    
-                    const kategoria = bunka.find("b").first().text().trim();
-                    const velkostMatch = text.match(/Velkost\s([^|]+)/i);
-                    const seedMatch = text.match(/Odosielaju\s*:\s*(\d+)/i);
-
-                    if (!kategoria.toLowerCase().includes("film") && !kategoria.toLowerCase().includes("seri") &&
-                        !kategoria.toLowerCase().includes("dokum") && !kategoria.toLowerCase().includes("tv")) return;
-
-                    videnieIds.add(torrentId);
-                    vsetkyVysledky.push({
-                        name: nazov, id: torrentId,
-                        size: velkostMatch ? velkostMatch[1].trim() : "?",
-                        seeds: seedMatch ? parseInt(seedMatch[1]) : 0,
-                        category: kategoria,
-                        downloadUrl: `${BASE_URL}/torrent/download.php?id=${torrentId}`
-                    });
-                    najdeneNaStranke++;
-                });
-
-                logSuccess(`Found ${najdeneNaStranke} torrents on page ${page}`);
-                
-                // Ak sme na tejto stránke nenašli žiadne výsledky (alebo len veľmi málo, čo značí koniec),
-                // nemá zmysel hľadať na ďalších stránkach.
-                if (najdeneNaStranke < 10) {
-                    logInfo(`Reached end of search results at page ${page}.`);
-                    break;
-                }
-
-            } catch (chyba) {
-                logError(`SKTorrent search failed on page ${page} for: "${dotaz}"`, chyba);
-                break;
-            }
-        }
-        
-        return vsetkyVysledky.sort((a, b) => b.seeds - a.seeds); 
-    });
-}
-
-
-async function stiahnutTorrentData(url, userAxios) {
-    return withCache(`torrent:${url}`, 86400000, async () => { 
-        logApi(`Downloading .torrent file from: ${url}`);
-        try {
-            const res = await userAxios.get(url, { responseType: "arraybuffer" });
-            const bufferString = res.data.toString("utf8", 0, 50);
-            if (bufferString.includes("<html") || bufferString.includes("<!DOC")) {
-                logWarn(`Received HTML instead of .torrent file from ${url}`);
-                return null;
-            }
-
-            const torrent = bencode.decode(res.data);
-            const info = bencode.encode(torrent.info);
-            const infoHash = crypto.createHash("sha1").update(info).digest("hex");
-
-            let subory = [];
-            if (torrent.info.files) {
-                subory = torrent.info.files.map((file, index) => {
-                    const cesta = (file["path.utf-8"] || file.path || []).map(p => p.toString()).join("/");
-                    const length = Number(file.length || 0); // Uloženie veľkosti v bytoch
-                    return { path: cesta, index, length };
-                });
-            } else {
-                const nazov = (torrent.info["name.utf-8"] || torrent.info.name || "").toString();
-                const length = Number(torrent.info.length || 0); // Uloženie veľkosti v bytoch
-                subory = [{ path: nazov, index: 0, length }];
-            }
-
-            logSuccess(`Successfully parsed .torrent (Hash: ${infoHash}) from ${url}`);
-            return { infoHash, files: subory };
-        } catch (chyba) {
-            logError(`Failed to download/parse .torrent from ${url}`, chyba);
-            return null;
-        }
-    });
-}
-
-async function stiahnutSurovyTorrent(url, userAxios) {
-    return withCache(`rawtorrent:${url}`, 86400000, async () => {
-        try {
-            const res = await userAxios.get(url, { responseType: "arraybuffer" });
-            const bufferString = res.data.toString("utf8", 0, 50);
-            if (bufferString.includes("<html") || bufferString.includes("<!DOC")) return null;
-            return res.data; 
-        } catch (chyba) {
-            return null;
-        }
-    });
-}
-
-async function vytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
+async function legacyVytvoritStream(t, seria, epizoda, userAxios, meta, userConfig) {
     logInfo(`Creating stream for torrent ID: ${t.id} (${t.name})`);
     const torrentData = await stiahnutTorrentData(t.downloadUrl, userAxios);
     if (!torrentData) return null;
@@ -1120,7 +582,34 @@ if (videoSubory.length === 1) {
 // VLASTNÝ EXPRESS SERVER BEZ `getRouter` Z SDK
 // ===================================================================
 const app = express();
-app.use(cors()); 
+app.use(cors());
+app.use(express.json({ limit: "32kb" }));
+
+app.post("/api/config-token", (req, res) => {
+    const body = req.body || {};
+    if (!body.uid || !body.pass) {
+        return res.status(400).json({ error: "Chýba uid alebo pass." });
+    }
+    if (!process.env.ENCRYPTION_KEY) {
+        return res.status(503).json({ error: "ENCRYPTION_KEY nie je nastavený na serveri." });
+    }
+    try {
+        const token = encodeConfig({
+            uid: String(body.uid),
+            pass: String(body.pass),
+            torbox: body.torbox ? String(body.torbox) : "",
+            tmdb: body.tmdb ? String(body.tmdb) : "",
+            showUncached: Boolean(body.showUncached),
+            sizeOrder: body.sizeOrder === "asc" ? "asc" : "desc",
+            qualityOrder: Array.isArray(body.qualityOrder) ? body.qualityOrder : [4, 3, 2, 1, 0],
+            cb: Date.now()
+        });
+        res.json({ token });
+    } catch (error) {
+        logError("Failed to encrypt config", error);
+        res.status(500).json({ error: "Šifrovanie configu zlyhalo." });
+    }
+}); 
 
 app.use((req, res, next) => {
     console.log(`\n======================================================`);
@@ -1169,32 +658,43 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>SKTorrent Multi-User Addon</title>
+        <title>SKTorrent Stremio/Nuvio Addon</title>
         <style>
-            body { font-family: Arial, sans-serif; background: #111; color: white; display: flex; justify-content: center; padding-top: 50px; }
-            .container { background: #222; padding: 30px; border-radius: 8px; width: 100%; max-width: 450px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-            h2 { text-align: center; color: #8A5A9E; margin-bottom: 5px; }
-            label { display: block; margin-top: 15px; font-size: 14px; font-weight: bold; }
-            input, select { width: 100%; padding: 10px; margin-top: 5px; background: #333; border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box;}
-            .inline-selects { display: flex; justify-content: space-between; gap: 10px; margin-top: 5px;}
-            .inline-selects select { width: 22%; text-align: center; }
-            button { width: 100%; padding: 12px; margin-top: 25px; background: #8A5A9E; color: white; border: none; font-size: 16px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-            button:hover { background: #6b467a; }
-            
-            #result-box { display: none; margin-top: 20px; padding: 15px; background: #1a1a1a; border: 1px solid #8A5A9E; border-radius: 4px; text-align: center; }
-            #generated-url { width: 100%; font-size: 12px; padding: 8px; margin: 10px 0; background: #000; color: #0f0; border: 1px solid #333; word-break: break-all; box-sizing: border-box; resize: none; overflow: hidden; height: 60px; }
-            .copy-btn { background: #444; margin-top: 5px; }
-            .copy-btn:hover { background: #555; }
-            .install-btn { background: #28a745; margin-top: 10px; }
-            .install-btn:hover { background: #218838; }
-            
-            .checkbox-label { display: flex; align-items: center; font-weight: normal; margin-top: 15px; }
-            .checkbox-label input { width: auto; margin-right: 10px; margin-top: 0;}
+            :root { color-scheme: dark; --bg: #090a10; --panel: rgba(22, 24, 36, .92); --line: rgba(255,255,255,.1); --muted: #a9adbd; --text: #f6f7fb; --accent: #a970ff; --accent2: #6f5cff; --success: #24c87a; }
+            * { box-sizing: border-box; }
+            body { min-height: 100vh; margin: 0; padding: 42px 20px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: radial-gradient(circle at 15% 0%, #30225e 0, transparent 34rem), radial-gradient(circle at 90% 100%, #123d4a 0, transparent 32rem), var(--bg); }
+            .container { position: relative; width: 100%; max-width: 540px; margin: 0 auto; padding: 32px; overflow: hidden; border: 1px solid var(--line); border-radius: 24px; background: var(--panel); box-shadow: 0 24px 80px rgba(0,0,0,.42); backdrop-filter: blur(18px); }
+            .container::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, var(--accent), #75d6ff, var(--success)); }
+            h2 { margin: 0; color: var(--text); font-size: 26px; letter-spacing: -.6px; text-align: center; }
+            h2::before { content: "🎬"; display: block; width: 48px; height: 48px; margin: 0 auto 13px; border-radius: 15px; background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 10px 26px rgba(145,100,255,.35); font-size: 24px; line-height: 48px; }
+            h3 { margin: 25px 0 4px !important; color: #e6e2ff !important; font-size: 14px; letter-spacing: .04em; text-align: left !important; text-transform: uppercase; }
+            h3 + label { margin-top: 14px; }
+            p { color: var(--muted) !important; line-height: 1.55; }
+            label { display: block; margin-top: 18px; color: #e5e7ef; font-size: 13px; font-weight: 650; }
+            input, select { width: 100%; height: 45px; margin-top: 7px; padding: 0 13px; border: 1px solid var(--line); border-radius: 11px; outline: none; background: rgba(4,5,11,.45); color: var(--text); font: inherit; transition: border-color .18s, box-shadow .18s, background .18s; }
+            input::placeholder { color: #73788b; }
+            input:focus, select:focus { border-color: var(--accent); background: rgba(10,11,20,.75); box-shadow: 0 0 0 3px rgba(169,112,255,.16); }
+            hr { margin: 29px 0 0 !important; border: 0 !important; border-top: 1px solid var(--line) !important; }
+            .inline-selects { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 7px; }
+            .inline-selects select { width: 100%; padding: 0 4px; text-align: center; }
+            button { width: 100%; min-height: 48px; margin-top: 27px; border: 0; border-radius: 12px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; cursor: pointer; font-size: 15px; font-weight: 750; letter-spacing: .01em; box-shadow: 0 12px 28px rgba(115,86,255,.28); transition: transform .18s, filter .18s, box-shadow .18s; }
+            button:hover { filter: brightness(1.12); box-shadow: 0 15px 34px rgba(115,86,255,.4); transform: translateY(-1px); }
+            button:active { transform: translateY(0); }
+            #result-box { display: none; margin-top: 22px; padding: 18px; border: 1px solid rgba(169,112,255,.42); border-radius: 16px; background: rgba(114,87,221,.1); text-align: center; }
+            #result-box p { margin: 0 !important; color: #e7dcff !important; font-size: 14px !important; font-weight: 750 !important; }
+            #generated-url { width: 100%; height: 70px; margin: 13px 0 2px; padding: 10px; resize: none; border: 1px solid var(--line); border-radius: 10px; background: #090b12; color: #9af0ca; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; line-height: 1.4; word-break: break-all; }
+            .copy-btn, .install-btn { margin-top: 10px; box-shadow: none; }
+            .copy-btn { background: #313648; }
+            .copy-btn:hover { background: #40465b; }
+            .install-btn { background: linear-gradient(135deg, #20b96e, #159c73); }
+            .checkbox-label { display: flex; gap: 10px; align-items: center; min-height: 45px; margin-top: 14px; padding: 0 13px; border: 1px solid var(--line); border-radius: 11px; background: rgba(4,5,11,.32); font-weight: 500; }
+            .checkbox-label input { width: 17px; height: 17px; margin: 0; accent-color: var(--accent); }
+            @media (max-width: 520px) { body { padding: 18px 12px; } .container { padding: 25px 19px; border-radius: 18px; } }
         </style>
     </head>
     <body>
         <div class="container">
-            <h2>SKTorrent Addon</h2>
+            <h2>SKTorrent Stremio/Nuvio Addon</h2>
             <p style="text-align:center; font-size:13px; color:#aaa;">Vyplň svoje údaje na vygenerovanie inštalačného odkazu.</p>
             
             <label>SKTorrent UID (Cookie s názvom uid)</label>
@@ -1264,35 +764,34 @@ app.get(['/', '/configure', '/:config/configure'], (req, res) => {
                     tmdb: document.getElementById('tmdb').value,
                     showUncached: document.getElementById('showUncached').checked,
                     sizeOrder: document.getElementById('sizeOrder').value,
-                    qualityOrder: uniqueQArray,
-                    cb: Date.now()
+                    qualityOrder: uniqueQArray
                 };
 
                 if(!config.uid || !config.pass) {
                     alert('Prosím, vyplň aspoň UID a Heslo pre SKTorrent.'); 
                     return;
                 }
-                
-                try {
-                    var jsonString = JSON.stringify(config);
-                    var encodedConfig = btoa(unescape(encodeURIComponent(jsonString)))
-                        .split('+').join('-')
-                        .split('/').join('_')
-                        .split('=').join('');
-                        
-                    var baseUrl = window.location.origin;
-                    if (!baseUrl || baseUrl === "null") {
-                        baseUrl = window.location.protocol + "//" + window.location.host;
-                    }
-                    
-                    var finalHttpUrl = baseUrl + '/' + encodedConfig + '/manifest.json';
-                    
-                    document.getElementById('result-box').style.display = 'block';
-                    document.getElementById('generated-url').value = finalHttpUrl;
-                } catch (error) {
-                    alert('Chyba pri generovaní kódu.');
+
+                fetch('/api/config-token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                }).then(function(response) {
+                    return response.json().then(function(data) {
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Šifrovanie zlyhalo');
+                        }
+                        var baseUrl = window.location.origin;
+                        if (!baseUrl || baseUrl === "null") {
+                            baseUrl = window.location.protocol + "//" + window.location.host;
+                        }
+                        document.getElementById('result-box').style.display = 'block';
+                        document.getElementById('generated-url').value = baseUrl + '/' + data.token + '/manifest.json';
+                    });
+                }).catch(function(error) {
+                    alert(error.message || 'Chyba pri generovaní kódu.');
                     console.error(error);
-                }
+                });
             }
 
             function copyUrl() {
@@ -1327,9 +826,9 @@ const handleManifest = (req, res) => {
 
     res.json({
         id: "org.stremio.skcztorrent.addon", 
-        version: "2.0.0",
-        name: "Cz-SkTorrent Addon",
-        description: "SKTorrent s TorBox prehrávaním, ČSFD a metadátami",
+        version: "3.0.0",
+        name: "SKTorrent",
+        description: "SKTorrent s TorBox, ČSFD a TMDB metadátami",
         types: ["movie", "series"],
         catalogs: [],
         resources: ["stream"],
@@ -1370,35 +869,28 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     const userAxios = getFastAxios(normalizedConfig);
     console.log(`\n====== 🎬 Hľadám pre UID: ${normalizedConfig.uid} | id='${id}' ======`);
 
+    const idParts = id.split(":");
+    const isTmdb = idParts[0] === "tmdb";
+    let zdrojId, seria, epizoda, vlastnyTyp;
+    if (isTmdb) {
+        const [, tmdbRawId, sRaw, eRaw] = idParts;
+        vlastnyTyp = sRaw !== undefined ? "series" : "movie";
+        seria = sRaw !== undefined ? parseInt(sRaw) : undefined;
+        epizoda = eRaw !== undefined ? parseInt(eRaw) : undefined;
+        zdrojId = `tmdb:${tmdbRawId}`;
+    } else {
+        const [ttId, sRaw, eRaw] = idParts;
+        vlastnyTyp = id.includes(":") ? "series" : "movie";
+        seria = sRaw ? parseInt(sRaw) : undefined;
+        epizoda = eRaw ? parseInt(eRaw) : undefined;
+        zdrojId = ttId;
+    }
 
-const idParts = id.split(":");
-const isTmdb = idParts[0] === "tmdb";
-
-let zdrojId, seria, epizoda, vlastnyTyp;
-
-if (isTmdb) {
-    const tmdbRawId = idParts[1];
-    const sRaw = idParts[2];
-    const eRaw = idParts[3];
-    vlastnyTyp = (sRaw !== undefined) ? "series" : "movie";
-    seria = sRaw !== undefined ? parseInt(sRaw) : undefined;
-    epizoda = eRaw !== undefined ? parseInt(eRaw) : undefined;
-    zdrojId = `tmdb:${tmdbRawId}`;
-} else {
-    const jeToSerialPodlaId = id.includes(":");
-    const [ttId, sRaw, eRaw] = idParts;
-    zdrojId = ttId;
-    seria = (jeToSerialPodlaId && sRaw) ? parseInt(sRaw) : undefined;
-    epizoda = (jeToSerialPodlaId && eRaw) ? parseInt(eRaw) : undefined;
-    vlastnyTyp = jeToSerialPodlaId ? "series" : "movie";
-}
-
-// 1. ZÍSKAME NÁZVY A ROK a META
-const metaData = await ziskatVsetkyNazvyARok(zdrojId, vlastnyTyp, userConfig.tmdb);
-const suroveNazvy = metaData?.nazvy || [];
-const vydanyRok = metaData?.rok;
-const metaInfo = metaData?.meta;
-const imdbIdPreCsfd = metaData?.imdbId || zdrojId; // fallback na zdrojId ako cache-key
+    // 1. ZÍSKAME NÁZVY A ROK a META
+    const metaData = await ziskatVsetkyNazvyARok(zdrojId, vlastnyTyp, normalizedConfig.tmdb);
+    const suroveNazvy = metaData?.nazvy || [];
+    const vydanyRok = metaData?.rok;
+    const metaInfo = metaData?.meta;
 
     if (!suroveNazvy.length) {
         logWarn(`No metadata names found. Returning empty list.`);
@@ -1418,7 +910,7 @@ const imdbIdPreCsfd = metaData?.imdbId || zdrojId; // fallback na zdrojId ako ca
     // 2. ČSFD LINK
     // Snažíme sa použiť primárne český názov z metadát pre ČSFD vyhľadávanie
         const hlavnyNazov = metaData?.meta?.titleOriginal || unikatneNazvy[0];
-        const csfdLink = await ziskatCsfdUrl(imdbIdPreCsfd, hlavnyNazov, vydanyRok, vlastnyTyp);
+        const csfdLink = await ziskatCsfdUrl(metaData?.imdbId || zdrojId, hlavnyNazov, vydanyRok, vlastnyTyp);
     
     if (csfdLink) {
         dotazy.add(csfdLink); 
@@ -1791,8 +1283,13 @@ app.get("/info-video", (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`\n======================================================`);
-    console.log(`🚀 SKTorrent Multi-User beží na portu ${PORT}`);
+    console.log(`🚀 SKTorrent Stremio/Nuvio Addon v3.0.0 beží na portu ${PORT}`);
     console.log(`🌐 Public URL: ${PUBLIC_URL}`);
+    if (!process.env.ENCRYPTION_KEY) {
+        console.log(`⚠️  ENCRYPTION_KEY nie je nastavený — nové linky sa nevygenerujú, staré Base64 stále fungujú`);
+    } else {
+        console.log(`🔐 Nové linky: AES-256-GCM | staré Base64 linky ostávajú platné`);
+    }
     console.log(`======================================================\n`);
 });
 

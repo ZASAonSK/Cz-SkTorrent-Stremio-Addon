@@ -1,6 +1,6 @@
-# 🎬 SKTorrent Stremio Addon
+# 🎬 SKTorrent Stremio/Nuvio Addon
 
-Neoficiálny Stremio doplnok pre vyhľadávanie a streamovanie filmov a seriálov z populárneho slovenského trackera **SKTorrent.eu**. Addon funguje na princípe vlastnej konfigurácie – každý používateľ si zadáva svoje vlastné prihlasovacie údaje (cookies) z SKTorrentu.
+Neoficiálny Stremio/Nuvio doplnok pre vyhľadávanie a streamovanie filmov a seriálov z populárneho slovenského trackera **SKTorrent.eu**. Addon funguje na princípe vlastnej konfigurácie – každý používateľ si zadáva svoje vlastné prihlasovacie údaje (cookies) z SKTorrentu.
 
 ## 🚀 Inštalácia (Dostupné inštancie)
 

@@ -8,7 +8,7 @@ Addon si môžeš nainštalovať a nakonfigurovať na jednej z týchto verejne b
 
 🔗 **[Koyeb Inštancia](https://managerial-karol-zasaonsk-d57eb595.koyeb.app/)**  
 
-*Vyber si ktorúkoľvek, obe obsahujú rovnakú verziu addonu.*
+*Vyber si ktorúkoľvek, všetky obsahujú rovnakú verziu addonu.*
 
 ---
 

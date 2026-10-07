@@ -6,7 +6,6 @@ Neoficiálny Stremio/Nuvio doplnok pre vyhľadávanie a streamovanie filmov a se
 
 Addon si môžeš nainštalovať a nakonfigurovať na jednej z týchto verejne bežiacich inštancií:
 
-🔗 **[Genez.io Inštancia Nefunkčné](https://bda31382-bef9-4743-b2e2-e9838ecb6690.eu-central-1.cloud.genez.io/)**  
 🔗 **[Koyeb Inštancia](https://managerial-karol-zasaonsk-d57eb595.koyeb.app/)**  
 
 *Vyber si ktorúkoľvek, obe obsahujú rovnakú verziu addonu.*

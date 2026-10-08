@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "sktorrent-addon.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["stahuje-sa.mp4", "lib/**"]
+      }
     }
   ],
   "routes": [

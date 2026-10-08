@@ -1,18 +1,5 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "sktorrent-addon.js",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": ["stahuje-sa.mp4", "lib/**"]
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "sktorrent-addon.js"
-    }
-  ]
+  "builds": [{ "src": "sktorrent-addon.js", "use": "@vercel/node", "config": { "includeFiles": ["stahuje-sa.mp4", "lib/**"] } }],
+  "routes": [{ "src": "/(.*)", "dest": "sktorrent-addon.js" }]
 }

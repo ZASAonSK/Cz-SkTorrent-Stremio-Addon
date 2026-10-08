@@ -14,7 +14,7 @@ const {
 const { overitTorboxCache, pockajNaTorrentFiles } = require("./lib/torbox");
 const { hladatTorrenty, stiahnutSurovyTorrent, stiahnutTorrentData } = require("./lib/sktorrent");
 const { ziskatVsetkyNazvyARok } = require("./lib/metadata");
-const { getCsfdStatus, ziskatCsfdUrl } = require("./lib/csfd");
+const { ziskatCsfdUrl } = require("./lib/csfd");
 const { movieFileMatches, vyfiltrujMovieTorrenty } = require("./lib/movie-matcher");
 const { torrentSediSEpizodou, torrentSedisSeriou } = require("./lib/episode-matcher");
 const { vytvoritStream } = require("./lib/stream-builder");
@@ -587,15 +587,9 @@ app.use(cors());
 app.use(express.json({ limit: "32kb" }));
 
 function getPublicBaseUrl(req) {
-    const configured = String(process.env.PUBLIC_URL || "")
-        .trim()
-        .replace(/\/+$/, "");
-
+    const configured = String(process.env.PUBLIC_URL || "").trim().replace(/\/+$/, "");
     if (configured) return configured;
-
-    const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
-        .split(",")[0]
-        .trim();
+    const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
     const protocol = forwardedProto || req.protocol || "https";
     return `${protocol}://${req.get("host")}`.replace(/\/+$/, "");
 }
@@ -634,11 +628,11 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", (req, res) => {
-    res.json({ ok: true, service: "sktorrent-addon", version: "3.0.1" });
+    res.json({ ok: true, service: "sktorrent-addon", version: "3.0.3" });
 });
 
 app.get("/health/csfd", (req, res) => {
-    res.json({ ok: true, ...getCsfdStatus() });
+    res.json({ ok: true, tmdbWikidataFallback: true });
 });
 
 // --- Web UI ---
@@ -934,7 +928,14 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     // 2. ČSFD LINK
     // Snažíme sa použiť primárne český názov z metadát pre ČSFD vyhľadávanie
         const hlavnyNazov = metaData?.meta?.titleOriginal || unikatneNazvy[0];
-        const csfdLink = await ziskatCsfdUrl(metaData?.imdbId || zdrojId, hlavnyNazov, vydanyRok, vlastnyTyp);
+        const csfdLink = await ziskatCsfdUrl(
+            metaData?.imdbId || zdrojId,
+            hlavnyNazov,
+            vydanyRok,
+            vlastnyTyp,
+            metaData?.tmdbId,
+            unikatneNazvy
+        );
     
     if (csfdLink) {
         dotazy.add(csfdLink); 
@@ -1095,10 +1096,7 @@ logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)..
                 const safeName = (stream.fileName || "video.mkv").split('/').join('|');
                 finalStream.url = `${requestPublicUrl}/${config}/play/${hash}/${proxySeria}/${proxyEpizoda}/${encodeURIComponent(safeName)}`;
             } else {
-                finalStream.behaviorHints = {
-                    ...(stream.behaviorHints || {}),
-                    notWebReady: true
-                };
+                finalStream.behaviorHints = { ...(stream.behaviorHints || {}), notWebReady: true };
                 finalStream.url = `${requestPublicUrl}/${config}/download/${hash}/${encodeURIComponent(stream.sktId)}`;
             }
             return finalStream;
@@ -1282,97 +1280,61 @@ app.get("/:config/download/:hash/:sktId", async (req, res) => {
     const activePass = userConfig?.password || userConfig?.pass;
     const torboxKey = userConfig?.tb_key || userConfig?.torbox;
 
-    if (!activeUid || !activePass) {
-        logWarn("[UNCACHED] Chýba SKTorrent konfigurácia");
-        return res.status(400).send("Chyba konfigurácie SKTorrent.");
-    }
-    if (!torboxKey) {
-        logWarn("[UNCACHED] Chýba TorBox API kľúč");
-        return res.status(400).send("Chýba TorBox API kľúč.");
-    }
+    if (!activeUid || !activePass) return res.status(400).send("Chyba konfigurácie SKTorrent.");
+    if (!torboxKey) return res.status(400).send("Chýba TorBox API kľúč.");
 
-    const normalizedConfig = { uid: activeUid, pass: activePass, torbox: torboxKey };
-    const userAxios = getFastAxios(normalizedConfig);
+    const userAxios = getFastAxios({ uid: activeUid, pass: activePass, torbox: torboxKey });
 
     try {
         const torrentUrl = `${BASE_URL}/torrent/download.php?id=${encodeURIComponent(sktId)}`;
-        logInfo(`[UNCACHED] Sťahujem torrent: ${torrentUrl}`);
-
         const rawTorrent = await stiahnutSurovyTorrent(torrentUrl, userAxios);
-        const torrentBuffer = Buffer.isBuffer(rawTorrent)
-            ? rawTorrent
-            : rawTorrent ? Buffer.from(rawTorrent) : null;
-
-        if (!torrentBuffer || torrentBuffer.length < 100) {
-            logError("[UNCACHED] SKTorrent nevrátil platný torrent súbor");
-            return res.status(502).send("Nepodarilo sa stiahnuť platný .torrent súbor.");
-        }
-
-        logSuccess(`[UNCACHED] Torrent stiahnutý, veľkosť: ${torrentBuffer.length} B`);
+        const torrentBuffer = Buffer.isBuffer(rawTorrent) ? rawTorrent : rawTorrent ? Buffer.from(rawTorrent) : null;
+        if (!torrentBuffer || torrentBuffer.length < 100) return res.status(502).send("Nepodarilo sa stiahnuť platný .torrent súbor.");
 
         const formData = new FormData();
-        formData.append("file", torrentBuffer, {
-            filename: `${hash}.torrent`,
-            contentType: "application/x-bittorrent"
-        });
+        formData.append("file", torrentBuffer, { filename: `${hash}.torrent`, contentType: "application/x-bittorrent" });
         formData.append("seed", "1");
 
-        logInfo("[UNCACHED] Odosielam torrent do TorBoxu");
-        const createRes = await axios.post(
-            "https://api.torbox.app/v1/api/torrents/createtorrent",
-            formData,
-            {
-                headers: {
-                    Authorization: `Bearer ${torboxKey}`,
-                    ...formData.getHeaders()
-                },
-                timeout: 30000,
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity
-            }
-        );
-
-        logInfo(`[UNCACHED] TorBox odpoveď: ${JSON.stringify(createRes.data)}`);
+        const createRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", formData, {
+            headers: { Authorization: `Bearer ${torboxKey}`, ...formData.getHeaders() },
+            timeout: 30000,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
+        });
 
         if (createRes.data?.success === false) {
             const message = createRes.data?.detail || createRes.data?.error || "TorBox odmietol torrent.";
-            logError(`[UNCACHED] TorBox chyba: ${message}`);
             return res.status(502).send(String(message));
         }
 
-        logSuccess(`[UNCACHED] Torrent úspešne pridaný do TorBoxu | hash=${hash}`);
         res.setHeader("Cache-Control", "no-store");
-        return res.sendFile(path.join(__dirname, "stahuje-sa.mp4"), error => {
-            if (error && !res.headersSent) {
-                logError("[UNCACHED] Informačné video sa nepodarilo odoslať", error);
-                res.status(500).send("Torrent bol pridaný, ale informačné video chýba.");
-            }
-        });
+        return res.sendFile(path.join(__dirname, "stahuje-sa.mp4"));
     } catch (error) {
         const apiData = error.response?.data;
         const message = apiData?.detail || apiData?.error || error.message || "Neznáma chyba";
         logError(`[UNCACHED] Chyba: ${message}`, error);
-        return res.status(error.response?.status || 500)
-            .send(`Chyba pri pridávaní do TorBoxu: ${message}`);
+        return res.status(error.response?.status || 500).send(`Chyba pri pridávaní do TorBoxu: ${message}`);
     }
 });
 
 app.get("/info-video", (req, res) => {
     res.setHeader("Cache-Control", "no-store");
-    return res.sendFile(path.join(__dirname, "stahuje-sa.mp4"));
+    res.sendFile(path.join(__dirname, "stahuje-sa.mp4"));
 });
 
 if (require.main === module) {
     app.listen(PORT, () => {
-        console.log(`\n======================================================`);
-        console.log(`🚀 SKTorrent Stremio/Nuvio Addon v3.0.1 beží na porte ${PORT}`);
+        console.log(`
+======================================================`);
+        console.log(`🚀 SKTorrent Stremio/Nuvio Addon v3.0.3 beží na porte ${PORT}`);
         console.log(`🌐 Public URL: ${process.env.PUBLIC_URL || `automaticky podľa requestu (lokálne http://localhost:${PORT})`}`);
         if (!process.env.ENCRYPTION_KEY) {
             console.log(`⚠️  ENCRYPTION_KEY nie je nastavený — nové linky sa nevygenerujú, staré Base64 stále fungujú`);
         } else {
             console.log(`🔐 Nové linky: AES-256-GCM | staré Base64 linky ostávajú platné`);
         }
-        console.log(`======================================================\n`);
+        console.log(`======================================================
+`);
     });
 }
 

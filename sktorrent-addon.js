@@ -1148,7 +1148,44 @@ logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)..
         return res.json({ streams: streamy });
 
 
-    } 
+    }
+
+    // --- Bez TorBoxu (P2P): zoradenie podľa nastavení z web UI ---
+    const rankKvality = (text = "") => {
+        const t = text.toLowerCase();
+        if (t.includes("2160p") || t.includes("4k") || t.includes("uhd")) return 4;
+        if (t.includes("1080p") || t.includes("fhd")) return 3;
+        if (t.includes("720p") || /\bhd\b/.test(t)) return 2;
+        if (t.includes("480p")) return 1;
+        return 0;
+    };
+    const bajtyZTextu = (text = "") => {
+        const m = text.match(/(\d+(?:[.,]\d+)?)\s*(tb|gb|mb|kb)\b/i);
+        if (!m) return 0;
+        const v = parseFloat(m[1].replace(",", "."));
+        const mult = { tb: 1024 ** 4, gb: 1024 ** 3, mb: 1024 ** 2, kb: 1024 }[m[2].toLowerCase()];
+        return v * mult;
+    };
+    const poradieVelkosti = userConfig.sizeOrder || "desc";
+    const poradieKvality = userConfig.qualityOrder || [4, 3, 2, 1, 0];
+    streamy = streamy
+        .map(s => {
+            const kat = (s.name || "").split("\n")[1] || "";
+            const txt = `${kat} ${s.title || ""}`;
+            return { s, kat, q: rankKvality(txt), z: bajtyZTextu(txt) };
+        })
+        .sort((x, y) => {
+            const ix = poradieKvality.indexOf(x.q), iy = poradieKvality.indexOf(y.q);
+            const rx = ix === -1 ? 99 : ix, ry = iy === -1 ? 99 : iy;
+            if (rx !== ry) return rx - ry;
+            return poradieVelkosti === "asc" ? x.z - y.z : y.z - x.z;
+        })
+        .map(o => ({ ...o.s, name: `[P2P]\n${o.kat}` }));
+
+    const trvanieBezTorbox = Date.now() - startCas;
+    logSuccess(`Stream request finished without TorBox in ${trvanieBezTorbox}ms. Returning ${streamy.length} streams.`);
+    res.setHeader('Cache-Control', 'max-age=300, stale-while-revalidate=300, stale-if-error=300');
+    return res.json({ streams: streamy });
 });
 
 

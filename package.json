@@ -1,7 +1,7 @@
 {
   "name": "org.stremio.skcztorrent.addon",
-  "version": "3.0.0",
-  "description": "SKTorrent Stremio/Nuvio Addon s TorBox, ČSFD a TMDB podporou",
+  "version": "3.1.0",
+  "description": "SKTorrent Stremio/Nuvio Addon s TorBox, Real-Debrid, ČSFD, TMDB a TVDB podporou",
   "main": "sktorrent-addon.js",
   "scripts": {
     "start": "node sktorrent-addon.js",

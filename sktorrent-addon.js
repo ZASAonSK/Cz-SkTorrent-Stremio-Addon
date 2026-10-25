@@ -1657,30 +1657,26 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
         }
 
         // ── PRECACHE ĎALŠEJ EPIZÓDY: rozhodovanie pre vnútorný request ──
-        // Trigger NIE JE tu (pri prehliadaní streamov), ale v /play handleri:
-        // pre-cache sa spúšťa až keď sa epizóda reálne začne prehrávať.
-        // Tento blok beží len pri internom requeste s ?precache=1 a rozhodne,
-        // či treba začať sťahovať najlepší uncached torrent do debridu.
         if (req.query.precache === '1' && seria !== undefined && epizoda !== undefined && debridProvider && debridApiKey && streamy.length > 0) {
-            if (streamy.some(s => s._sortCached === 1)) {
-                logInfo(`[PRECACHE] S${seria}E${epizoda}: netreba sťahovať — cached stream už existuje`);
+            const cachedStream = streamy.find(s => s._sortCached === 1);
+            if (cachedStream && cachedStream.url) {
+                logInfo(`[PRECACHE] S${seria}E${epizoda}: cached stream nájdený, predhrievam Play Cache...`);
+                const lokalnaPlayUrl = cachedStream.url.replace(requestPublicUrl, `http://127.0.0.1:${PORT}`);
+                axios.get(lokalnaPlayUrl, { timeout: 30000, maxRedirects: 0, validateStatus: () => true })
+                    .then(() => logSuccess(`[PRECACHE] S${seria}E${epizoda}: Play link úspešne uložený do cache`))
+                    .catch(e => logWarn(`[PRECACHE] S${seria}E${epizoda}: Chyba predohrevu Play Cache: ${e.message}`));
             } else {
-                // Žiadna cached verzia — vyberieme najlepší uncached podľa user sort.
-                // Pre Real-Debrid preskakujeme názvy, ktoré RD blokuje (451). Ak sú
-                // blokované všetky, kandidat = undefined → nič sa nesťahuje (fallback
-                // by stiahol torrent, ktorý RD aj tak odmietne).
+                // Žiadna cached verzia — stiahneme najlepší uncached torrent do debridu
                 const kandidat = streamy.find(s => s._sortCached === 0 && !(debridProvider === 'realdebrid' && s._sortRdBlocked === 1));
                 if (kandidat && kandidat.url) {
                     const nazovKandidata = (kandidat.title || '').split('\n')[0] || 'neznámy';
-                    logInfo(`[PRECACHE] S${seria}E${epizoda}: žiadny cached stream, sťahujem najlepší uncached: ${nazovKandidata}`);
-                    // Klik na ⏳ stream by zavolal kandidat.url (cez PUBLIC_URL).
-                    // Interne ho smerujeme na loopback, nech request nejde cez tunel.
+                    logInfo(`[PRECACHE] S${seria}E${epizoda}: sťahujem do debridu: ${nazovKandidata}`);
                     const lokalnaUrl = kandidat.url.replace(requestPublicUrl, `http://127.0.0.1:${PORT}`);
                     axios.get(lokalnaUrl, { timeout: 30000, maxRedirects: 0, validateStatus: () => true })
-                        .then(() => logSuccess(`[PRECACHE] S${seria}E${epizoda}: /download vybavené`))
-                        .catch(e => logInfo(`[PRECACHE] S${seria}E${epizoda}: /download = ${e.message}`));
+                        .then(() => logSuccess(`[PRECACHE] S${seria}E${epizoda}: /download požiadavka odoslaná do debridu`))
+                        .catch(e => logInfo(`[PRECACHE] S${seria}E${epizoda}: /download zlyhalo: ${e.message}`));
                 } else {
-                    logInfo(`[PRECACHE] S${seria}E${epizoda}: uncached streamy sú, ale žiadny vhodný kandidát`);
+                    logInfo(`[PRECACHE] S${seria}E${epizoda}: žiadny vhodný stream na stiahnutie`);
                 }
             }
         }

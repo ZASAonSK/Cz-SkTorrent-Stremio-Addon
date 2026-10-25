@@ -1658,14 +1658,13 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
 
         // ── PRECACHE ĎALŠEJ EPIZÓDY: rozhodovanie pre vnútorný request ──
         if (req.query.precache === '1' && seria !== undefined && epizoda !== undefined && debridProvider && debridApiKey && streamy.length > 0) {
-            const cachedStream = streamy.find(s => s._sortCached === 1);
-            if (cachedStream && cachedStream.url) {
-                logInfo(`[PRECACHE] S${seria}E${epizoda}: cached stream nájdený, predhrievam Play Cache...`);
-                const lokalnaPlayUrl = cachedStream.url.replace(requestPublicUrl, `http://127.0.0.1:${PORT}`);
-                axios.get(lokalnaPlayUrl, { timeout: 30000, maxRedirects: 0, validateStatus: () => true })
-                    .then(() => logSuccess(`[PRECACHE] S${seria}E${epizoda}: Play link úspešne uložený do cache`))
-                    .catch(e => logWarn(`[PRECACHE] S${seria}E${epizoda}: Chyba predohrevu Play Cache: ${e.message}`));
-            } else {
+        const cachedStream = streamy.find(s => s._sortCached === 1);
+        if (cachedStream && cachedStream.url) {
+            logInfo(`[PRECACHE] S${seria}E${epizoda}: cached stream nájdený, predhrievam Play Cache...`);
+            axios.get(cachedStream.url, { timeout: 30000, maxRedirects: 0, validateStatus: () => true })
+                .then(() => logSuccess(`[PRECACHE] S${seria}E${epizoda}: Play link úspešne predpripravený`))
+                .catch(e => logWarn(`[PRECACHE] S${seria}E${epizoda}: Chyba predohrevu: ${e.message}`));
+        } else {
                 // Žiadna cached verzia — stiahneme najlepší uncached torrent do debridu
                 const kandidat = streamy.find(s => s._sortCached === 0 && !(debridProvider === 'realdebrid' && s._sortRdBlocked === 1));
                 if (kandidat && kandidat.url) {
@@ -1804,7 +1803,7 @@ const torboxPlayHandler = async (req, res) => {
             headers: {
               Authorization: `Bearer ${torboxKey}`
             },
-            timeout: 8000
+            timeout: 15000
           }
         );
 
@@ -2295,7 +2294,7 @@ app.get("/:config/download/:hash/:sktId", asyncRoute(async (req, res) => {
                 try {
                     const mylistRes = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
                         headers: { Authorization: `Bearer ${debridApiKey}` },
-                        timeout: 8000,
+                        timeout: 15000,
                         params: { bypass_cache: true }
                     });
 
@@ -2308,7 +2307,7 @@ app.get("/:config/download/:hash/:sktId", asyncRoute(async (req, res) => {
                             const toStop = finishedSeeding[0];
                             await axios.post("https://api.torbox.app/v1/api/torrents/controltorrent",
                                 { torrent_id: String(toStop.id), operation: "stop_seeding" },
-                                { headers: { Authorization: `Bearer ${debridApiKey}` }, timeout: 8000 }
+                                { headers: { Authorization: `Bearer ${debridApiKey}` }, timeout: 15000 }
                             );
                             logApi(`[TB SLOTS] Zastavený seeding torrentu ${toStop.id}`);
 

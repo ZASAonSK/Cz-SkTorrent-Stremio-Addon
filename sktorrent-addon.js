@@ -1730,7 +1730,7 @@ app.get('/:config/play/:hash/:seria/:epizoda/:fileName', asyncRoute(async (req, 
 
     // PRECACHE ĎALŠEJ EPIZÓDY — /play znamená, že sa epizóda reálne začala
     // prehrávať (cached ⚡ stream). Naplánujeme pre-cache nasledujúcej epizódy.
-    spustitPrecacheDalsejEpizody(userConfig, debridProvider, debridApiKey, hash, seria, epizoda, config);
+    spustitPrecacheDalsejEpizody(userConfig, debridProvider, debridApiKey, hash, seria, epizoda, config, req);
 
     if (debridProvider === 'torbox') {
         return torboxPlayHandler(req, res);

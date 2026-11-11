@@ -39,4 +39,7 @@ test("episode matcher supports normal episodes, packs, and rejects a wrong episo
     assert.equal(torrentSediSEpizodou("Show.S01E02.1080p", 1, 2), true);
     assert.equal(torrentSediSEpizodou("Show.S01E03.1080p", 1, 2), false);
     assert.equal(torrentSediSEpizodou("Show.S01-S03.Pack", 2, 8), true);
+    assert.equal(torrentSedisSeriou("VisionQuest 1 série (2026)", 1), true);
+    assert.equal(torrentSediSEpizodou("VisionQuest 1 série (2026)", 1, 8), true);
+    assert.equal(torrentSedisSeriou("VisionQuest 1 série (2026)", 2), false);
 });

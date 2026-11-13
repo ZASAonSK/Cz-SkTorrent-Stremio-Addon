@@ -42,6 +42,17 @@ function getPublicBaseUrl(req) {
     return `${protocol}://${req.get("host")}`.replace(/\/+$/, "");
 }
 
+// Stremio pri { streams: [] } iba potichu zmizne. Tento neprehrateľný záznam
+// zobrazí krátky dôvod a po kliknutí otvorí nastavenia addonu.
+function vytvorStatusStream(sprava, requestPublicUrl) {
+    return {
+        name: "⚠️ SKTorrent",
+        title: sprava,
+        externalUrl: `${requestPublicUrl}/configure`,
+        behaviorHints: { notWebReady: true }
+    };
+}
+
 const app = express();
 app.set("trust proxy", 1);
 app.use(cors());
@@ -1182,7 +1193,7 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
         const maDebrid = !!(activeTorbox || userConfig?.realdebrid);
         if (!maDebrid) {
             logWarn(`Stream request denied - Invalid or missing config (no login, no debrid).`);
-            return res.json({ streams: [], error: "Neplatná konfigurácia." });
+            return res.json({ streams: [vytvorStatusStream("Chýbajú prihlasovacie údaje do SKTorrentu alebo debrid služba.", requestPublicUrl)] });
         }
         logInfo(`Debrid-only config: ${activeTorbox ? 'TorBox' : 'Real-Debrid'} — SKTorrent login not required`);
     }
@@ -1305,7 +1316,7 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
 
     if (!suroveNazvy.length) {
         logWarn(`No metadata names found. Returning empty list.`);
-        return res.json({ streams: [] });
+        return res.json({ streams: [vytvorStatusStream("Nepodarilo sa zistiť názov filmu alebo seriálu z jeho identifikátora.", requestPublicUrl)] });
     }
 
     const zakladneNazvy = [];
@@ -1323,9 +1334,11 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
     
     let torrenty = [];
     const videnieTorrentIds = new Set();
+    const chybyVyhladavania = [];
     let uspesneNajdeneCezCsfd = false;
 
     const spracujVysledky = (d, najdene) => {
+        if (najdene.searchError) chybyVyhladavania.push(najdene.searchError);
         logInfo(`Search result: "${d?.slice(0, 60)}" → ${najdene.length} torrentov`);
         for (const t of najdene) {
             if (!videnieTorrentIds.has(t.id)) {
@@ -1415,6 +1428,14 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
         torrenty = vyfiltrujMovieTorrenty(torrenty, metaInfo, zakladneNazvy);
     }
 
+    if (torrenty.length === 0) {
+        const chyba = chybyVyhladavania.length > 0
+            ? [...new Set(chybyVyhladavania)].join(" ")
+            : "Pre tento titul sa na SKTorrente nenašli žiadne torrenty.";
+        logInfo(`No usable torrents found: ${chyba}`);
+        return res.json({ streams: [vytvorStatusStream(chyba, requestPublicUrl)] });
+    }
+
     const execLimit = pLimit(5);
     logInfo(`Creating streams for ${torrenty.length} torrents (Max concurrency: 5)...`);
     
@@ -1422,6 +1443,14 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
     let streamy = (await Promise.all(
         torrenty.map(t => execLimit(() => vytvoritStream(t, seria, epizoda, userAxios, metaInfo, userConfig)))
     )).filter(Boolean);
+
+    if (streamy.length === 0) {
+        const sprava = seria !== undefined
+            ? `Torrenty sa našli, ale žiadny neobsahuje video pre S${seria}E${epizoda}.`
+            : "Torrenty sa našli, ale nepodarilo sa z nich vytvoriť prehrateľný stream.";
+        logInfo(sprava);
+        return res.json({ streams: [vytvorStatusStream(sprava, requestPublicUrl)] });
+    }
 
         // ── DEBRID REŽIM (TorBox / Real-Debrid) ──
         const debridProvider = userConfig.debridProvider || (userConfig.torbox ? 'torbox' : '');
@@ -1491,6 +1520,11 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
             const cachedOnly = userConfig.cachedOnly === true;
             if (cachedOnly) {
                 streamy = streamy.filter(s => s._sortCached === 1);
+                if (streamy.length === 0) {
+                    const sprava = debridCache.apiError || `Žiadny z nájdených torrentov nie je momentálne uložený v ${providerLabel}. Vypni voľbu „Iba cached“ alebo skús neskôr.`;
+                    logInfo(sprava);
+                    return res.json({ streams: [vytvorStatusStream(sprava, requestPublicUrl)] });
+                }
             }
         }
 
@@ -1519,12 +1553,6 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
                     _sortSeeds: stream.seeds || 0
                 };
             });
-        }
-
-        // ── Ak nie sú žiadne streamy ──
-        if (streamy.length === 0) {
-            logInfo("No streams found. Returning empty list.");
-            return res.json({ streams: [] });
         }
 
         // ── FILTROVANIE (Meteor-štýl) ──
@@ -1593,6 +1621,12 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
         if (maxSizeVal > 0) {
             const maxSizeBytes = maxSizeVal * 1024 * 1024 * 1024;
             streamy = streamy.filter(s => s._sortSize > 0 && s._sortSize <= maxSizeBytes);
+        }
+
+        if (streamy.length === 0) {
+            const sprava = "Nájdené torrenty nevyhovujú aktívnym filtrom (kvalita, HDR, zdroj, seed alebo veľkosť). Uprav ich v nastaveniach addonu.";
+            logInfo(sprava);
+            return res.json({ streams: [vytvorStatusStream(sprava, requestPublicUrl)] });
         }
 
         // 5. Language preference — iba priorita, nefiltruje
@@ -2431,7 +2465,11 @@ app.get("/info-video", (req, res) => {
 app.use((err, req, res, next) => {
     logError(`Unhandled error na ${req.method} ${maskConfigVUrl(req.originalUrl)}`, err);
     if (res.headersSent) return next(err);
-    if (req.path.includes("/stream/")) return res.status(500).json({ streams: [] });
+    if (req.path.includes("/stream/")) {
+        return res.status(500).json({
+            streams: [vytvorStatusStream("Nastala neočakávaná chyba pri hľadaní streamov. Skús to znova o chvíľu.", getPublicBaseUrl(req))]
+        });
+    }
     res.status(500).send("Chyba servera.");
 });
 

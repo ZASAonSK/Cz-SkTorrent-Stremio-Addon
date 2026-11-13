@@ -33,6 +33,12 @@ test("movie matcher distinguishes sequels, packs, and years", () => {
     assert.equal(movieFileMatches("Avatar.2.2021.mkv", meta), true);
 });
 
+test("movie matcher treats a middle dot and hyphen as equivalent title separators", () => {
+    const meta = { titleOriginal: "WALL·E", titleCz: "VALL-I", yearStart: 2008 };
+    assert.equal(movieTorrentMatches("VALL-I / WALL-E (2008)(CZ/SK/EN)[1080p]", meta), true);
+    assert.equal(movieFileMatches("WALL-E.2008.1080p.mkv", meta), true);
+});
+
 test("episode matcher supports normal episodes, packs, and rejects a wrong episode", () => {
     assert.equal(torrentSedisSeriou("Show.S01E02.1080p", 1), true);
     assert.equal(torrentSedisSeriou("Show.S02E02.1080p", 1), false);

@@ -1528,32 +1528,51 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
             }
         }
 
-        // ── P2P REŽIM (bez debridu) ──
-        if ((!debridProvider || !debridApiKey) && streamy.length > 0) {
-            logInfo("TorBox not configured. Using P2P mode (WebTorrent).");
-            streamy = streamy.map(stream => {
-                const staraKategoria = stream.name.split("\n")[1] || "";
-                const sortText = `${staraKategoria} ${stream.title || ""}`;
-                return {
-                    name: `[P2P] SKT\n${staraKategoria}`,
-                    title: stream.title,
-                    infoHash: stream.infoHash,
-                    fileIdx: stream.fileIdx,
-                    sources: stream.sources,
-                    behaviorHints: stream.behaviorHints,
-                    _sortCached: 0,
-                    _sortDub: stream.isDub ? 1 : 0,
-                    _sortDubLang: stream.isDub ? (stream.dubLang || '') : '',
-                    _sortName: stream._sortName || '',
-                    _sortCategory: stream._sortCategory || '',
-                    _sortHdr: stream._sortHdr || '',
-                    _sortSource: stream._sortSource || 'neznámy',
-                    _sortQuality: getQualityRank(sortText),
-                    _sortSize: getSizeBytes(sortText),
-                    _sortSeeds: stream.seeds || 0
-                };
-            });
-        }
+// ── P2P REŽIM (bez debridu) ──
+let p2pInfoStream = [];
+if ((!debridProvider || !debridApiKey) && streamy.length > 0) {
+    logInfo("TorBox not configured. Using P2P mode (WebTorrent).");
+    const pocetPred = streamy.length;
+    streamy = streamy.filter(s => !s.isPrivate);
+    const pocetSkrytych = pocetPred - streamy.length;
+    logInfo(`P2P: skryté súkromné torrenty: ${pocetSkrytych}`);
+
+    if (pocetSkrytych > 0) {
+        const sklonovanie = pocetSkrytych === 1 ? "torrent" : (pocetSkrytych < 5 ? "torrenty" : "torrentov");
+        p2pInfoStream = [].concat(vytvorStatusStream(
+            `ℹ️ Skryté: ${pocetSkrytych} ${sklonovanie}, lebo sú súkromné a používaš P2P režim. ` +
+            `Ak ich chceš prehrať, prepni na debrid službu (TorBox / Real-Debrid).`,
+            requestPublicUrl
+        ));
+    }
+
+    if (streamy.length === 0) {
+        return res.json({ streams: p2pInfoStream });
+    }
+
+    streamy = streamy.map(stream => {
+        const staraKategoria = stream.name.split("\n")[1] || "";
+        const sortText = `${staraKategoria} ${stream.title || ""}`;
+        return {
+            name: `[P2P] SKT\n${staraKategoria}`,
+            title: stream.title,
+            infoHash: stream.infoHash,
+            fileIdx: stream.fileIdx,
+            sources: stream.sources,
+            behaviorHints: stream.behaviorHints,
+            _sortCached: 0,
+            _sortDub: stream.isDub ? 1 : 0,
+            _sortDubLang: stream.isDub ? (stream.dubLang || '') : '',
+            _sortName: stream._sortName || '',
+            _sortCategory: stream._sortCategory || '',
+            _sortHdr: stream._sortHdr || '',
+            _sortSource: stream._sortSource || 'neznámy',
+            _sortQuality: getQualityRank(sortText),
+            _sortSize: getSizeBytes(sortText),
+            _sortSeeds: stream.seeds || 0
+        };
+    });
+}
 
         // ── FILTROVANIE (Meteor-štýl) ──
 
@@ -1737,7 +1756,7 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
             res.setHeader('Cache-Control', 'max-age=300, stale-while-revalidate=300, stale-if-error=300');
         }
 
-        return res.json({ streams: streamy });
+        return res.json({ streams: [...p2pInfoStream, ...streamy] });
     }));
 
 
@@ -2258,6 +2277,27 @@ async function handleRealDebridPlay(req, res, hash, decodedFileName, RD_API_KEY)
 
 
 // --- Download (uncached -> nahranie do debridu) ---
+app.get("/:config/torrent/:sktId/file.torrent", asyncRoute(async (req, res) => {
+  const cfg = decodeConfig(req.params.config);
+  const uid = cfg?.userid || cfg?.uid;
+  const pass = cfg?.password || cfg?.pass;
+  if (!uid || !pass) return res.status(400).send("Chýba SKTorrent login.");
+
+  const dlAxios = getFastAxios({ uid, pass });
+  const raw = await stiahnutSurovyTorrent(
+    `https://sktorrent.eu/torrent/download.php?id=${encodeURIComponent(req.params.sktId)}`,
+    dlAxios
+  );
+  const buf = Buffer.isBuffer(raw) ? raw : raw ? Buffer.from(raw) : null;
+  if (!buf || buf.length < 100) return res.status(502).send("Nepodarilo sa stiahnuť .torrent");
+
+  res.set({
+    "Content-Type": "application/x-bittorrent",
+    "Content-Disposition": 'attachment; filename="video.torrent"',
+    "Cache-Control": "no-store"
+  });
+  res.send(buf);
+}));
 app.get("/:config/download/:hash/:sktId", asyncRoute(async (req, res) => {
     const { hash, sktId, config } = req.params;
 

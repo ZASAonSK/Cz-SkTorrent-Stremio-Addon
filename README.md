@@ -13,7 +13,7 @@ Funguje na princípe klientskej konfigurácie – každý používateľ zadáva 
 
 ### 1. Verejná inštancia
 Konfiguráciu a inštalačný odkaz si vygeneruješ na:  
-🔗 **[Koyeb Inštancia](https://managerial-karol-zasaonsk-d57eb595.koyeb.app/)**
+🔗 **[Koyeb Inštancia](https://koyeb.zasaonsk.online)**
 
 ### 2. Ako pridať addon do aplikácie
 

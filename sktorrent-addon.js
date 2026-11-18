@@ -9,8 +9,8 @@ const FormData = require("form-data");
 const path = require("path");
 const cors = require("cors");
 const {
-    decodeConfig, encodeConfig, getFastAxios, getQualityRank, getSizeBytes,
-    logApi, logError, logInfo, logSuccess, logWarn, odstranDiakritiku, pLimit, skratNazov, withCache
+    decodeConfig, encodeConfig, getFastAxios, getQualityRank, getSizeBytes, jeCelyTitulokVNazve,
+    logApi, logError, logInfo, logSuccess, logWarn, odstranDiakritiku, pLimit, skratNazov, userCacheKey, withCache
 } = require("./lib/common");
 const { pockajNaTorrentFiles } = require("./lib/torbox");
 const { overitDebridCache, rdAddMagnet, rdSelectFiles, rdTorrentInfo, rdUnrestrictLink, rdListTorrents, zapisatDoRdCache } = require("./lib/realdebrid");
@@ -1241,7 +1241,7 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
     const normalizedConfig = { uid: activeUid, pass: activePass, torbox: activeTorbox, tmdb: activeTmdb, tvdb: userConfig.tvdb, preferDub: activePreferDub };
     const userAxios = getFastAxios(normalizedConfig);
     // userKey = hash uid — fingerprint účtu pre cache namespacing (bez raw UID v logoch)
-    const userKey = crypto.createHash("sha1").update(String(activeUid || "")).digest("hex").slice(0, 8);
+    const userKey = userCacheKey({ uid: activeUid });
     console.log(`\n====== 🎬 Hľadám (user: ${userKey}) | id='${id}' ======`);
 
     // Parsovanie ID — podporuje všetky formáty:
@@ -1334,21 +1334,22 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
     
     let torrenty = [];
     const videnieTorrentIds = new Set();
+    const csfdTorrentIds = new Set();
     const chybyVyhladavania = [];
-    let uspesneNajdeneCezCsfd = false;
 
     const spracujVysledky = (d, najdene) => {
         if (najdene.searchError) chybyVyhladavania.push(najdene.searchError);
         logInfo(`Search result: "${d?.slice(0, 60)}" → ${najdene.length} torrentov`);
+        const jeCsfdDotaz = !!csfdLink && d === csfdLink;
         for (const t of najdene) {
+            if (jeCsfdDotaz) csfdTorrentIds.add(t.id);
             if (!videnieTorrentIds.has(t.id)) {
                 torrenty.push(t);
                 videnieTorrentIds.add(t.id);
             }
         }
-        if (d === csfdLink && najdene.length > 0) {
+        if (jeCsfdDotaz && najdene.length > 0) {
             logSuccess(`Nájdené cez ČSFD Link. Mám ${torrenty.length} výsledkov.`);
-            uspesneNajdeneCezCsfd = true;
         }
     };
 
@@ -1389,12 +1390,15 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
         unikFallback.forEach((d, i) => spracujVysledky(d, vysledkyFb[i] || []));
     }
 
-    // Name filter preskočíme LEN ak CSFD query reálne našla torrenty (sú to presné
-    // zhody). Ak CSFD link existuje ale query nič nevrátila, filter beží — inak by
-    // cez generické fallback query prešiel garbage (iné filmy s podobným názvom).
-    if (!uspesneNajdeneCezCsfd) {
+    // Name filter: torrenty nájdené priamo cez ČSFD link berieme ako presné zhody
+    // (na trackeri môžu mať úplne iný názov), takže tie preskakujeme. Všetko ostatné
+    // — teda výsledky query podľa názvu — musí mať v názve CELÝ titul, inak by cez
+    // filter prešli cudzie tituly začínajúce rovnakým slovom ("Lucky Louie" pre "Lucky").
+    {
         const predNameFiltrom = torrenty.length;
         torrenty = torrenty.filter(t => {
+            if (csfdTorrentIds.has(t.id)) return true;
+
             let rawName = odstranDiakritiku(t.name.toLowerCase()).replace(/^stiahni si\s*/i, "").trim();
             const prefixRe = /^(?:filmy|film|serialy|serial|seriál|seria|serie|dokumenty|dokument|tv|kreslene|kreslené|anime)\b/i;
             const junkRe = /^(?:\s+|[-–_|/]+|\[[^\]]*]|\([^)]+\)|1080p|720p|2160p|4k|hdr|web[-\s]?dl|webrip|brrip|bluray|dvdrip|tvrip|cz|sk|en)\b/i;
@@ -1407,11 +1411,9 @@ app.get('/:config/stream/:type/:id.json', asyncRoute(async (req, res) => {
             } while (rawName !== prev);
 
             for (const nazov of unikatneNazvy) {
-                const hl = odstranDiakritiku(nazov.toLowerCase()).trim();
-                if (!hl) continue;
-                const escaped = hl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                if (new RegExp(`\\b${escaped}\\b`, "i").test(rawName)) return true;
+                if (jeCelyTitulokVNazve(rawName, nazov)) return true;
             }
+            logWarn(`[FILTER OUT] ${t.name} | reason=TITLE_MISMATCH`);
             return false;
         });
         logInfo(`Title accuracy filter complete. Remaining: ${torrenty.length} (filtered out ${predNameFiltrom - torrenty.length} unrelated titles)`);
@@ -2286,7 +2288,8 @@ app.get("/:config/torrent/:sktId/file.torrent", asyncRoute(async (req, res) => {
   const dlAxios = getFastAxios({ uid, pass });
   const raw = await stiahnutSurovyTorrent(
     `https://sktorrent.eu/torrent/download.php?id=${encodeURIComponent(req.params.sktId)}`,
-    dlAxios
+    dlAxios,
+    userCacheKey({ uid, pass })
   );
   const buf = Buffer.isBuffer(raw) ? raw : raw ? Buffer.from(raw) : null;
   if (!buf || buf.length < 100) return res.status(502).send("Nepodarilo sa stiahnuť .torrent");
@@ -2320,7 +2323,7 @@ app.get("/:config/download/:hash/:sktId", asyncRoute(async (req, res) => {
             let torrentBuffer = null;
             if (sktUid && sktPass && sktId) {
                 const dlAxios = getFastAxios({ uid: sktUid, pass: sktPass });
-                const raw = await stiahnutSurovyTorrent(`${BASE_URL}/torrent/download.php?id=${encodeURIComponent(sktId)}`, dlAxios);
+                const raw = await stiahnutSurovyTorrent(`${BASE_URL}/torrent/download.php?id=${encodeURIComponent(sktId)}`, dlAxios, userCacheKey({ uid: sktUid, pass: sktPass }));
                 torrentBuffer = Buffer.isBuffer(raw) ? raw : raw ? Buffer.from(raw) : null;
                 if (torrentBuffer && torrentBuffer.length < 100) torrentBuffer = null;
             }

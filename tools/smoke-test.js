@@ -4,10 +4,14 @@ process.env.ENCRYPTION_KEY='testkey'; process.env.QUIET_LOGS='1';
 const Module=require('module'); const path=require('path');
 const ROOT=path.resolve(process.argv[2]||path.join(__dirname,'..'));
 const H1='a'.repeat(40), H2='b'.repeat(40), H3='c'.repeat(40);
+const H4='f'.repeat(40), H5='1'.repeat(40), H6='2'.repeat(40), H7='3'.repeat(40), H8='4'.repeat(40);
+const CSFD_LUCKY='https://www.csfd.cz/film/999';
 const calls=[];
 const route=(url,method,opts)=>{
   calls.push(method+' '+url);
   if(/v3-cinemeta.*\/meta\/movie\//.test(url)) return {data:{meta:{name:'Test Movie',year:'2010'}}};
+  if(/v3-cinemeta.*\/meta\/series\/tt0000009/.test(url)) return {data:{meta:{name:'Lucky',year:'2026-'}}};
+  if(/v3-cinemeta.*\/meta\/series\/tt0168366/.test(url)) return {data:{meta:{name:'Pokémon',year:'1997-2023'}}};
   if(/v3-cinemeta.*\/meta\/series\//.test(url)) return {data:{meta:{name:'Test Show',year:'2015-2018'}}};
   if(/checkcached/.test(url)) return {data:{success:true,data:[{hash:H1}]}};
   if(/torbox.*mylist/.test(url)) return {data:{success:true,data:[{hash:H1,id:77,cached:true,files:[{id:5,name:'Test.Movie.2010.1080p.mkv',short_name:'Test.Movie.2010.1080p.mkv',size:4e9}]}]}};
@@ -36,10 +40,21 @@ const fake=(rel,exp)=>{const p=require.resolve(path.join(ROOT,rel));require.cach
 const mk=(name,id,cat='Filmy',z=[])=>({name,id,size:'4 GB',seeds:10,category:cat,zanre:z,downloadUrl:'x'+id});
 fake('lib/sktorrent.js',{
   hladatTorrenty:async(q)=>{ if(/Show|Relacia/.test(q)) return [mk('Stiahni si Serialy Test Show S01E02 1080p SK',H3,'Serialy'),mk('Stiahni si Serialy Test Show S02E02 1080p SK','d'.repeat(40),'Serialy')];
+     if(q===CSFD_LUCKY) return [mk('Stiahni si Seriál Lucky S01E01 (2026)[1080p][WEB-DL][HEVC]',H4,'Serialy')];
+     if(/^Lucky/i.test(q)) return [mk('Stiahni si Seriál Lucky S01E01 (2026)[1080p][WEB-DL][HEVC]',H4,'Serialy'),mk('Stiahni si Seriál Lucky Louie S01 1080p WEBRip CZ EN',H5,'Serialy'),mk('Stiahni si Seriál Klikař Hank / Lucky Hank S01 (CZ)[WebRip][1080p]',H6,'Serialy')];
+     if(/^Pok[eé]mon/i.test(q)) return [mk('Stiahni si Seriál Pokemon 1.Serie Indigo League Part 1 (CZ/EN)[DVDRip][480p][AVC]',H7,'Serialy'),mk('Stiahni si Seriál Pokémon: Horizonty (E01-E45)(EN/CZ)[WEB-DL/1080p/ AAC 2.0]',H8,'Serialy')];
      return [mk('Stiahni si Filmy Test Movie 2010 1080p CZ',H1),mk('Stiahni si Filmy Test Movie 2010 WEB-DL 720p',H2),mk('Stiahni si xXx Test Movie 2010 erotika','e'.repeat(40),'xXx hry (18+)',['Eroticky'])]; },
-  stiahnutTorrentData:async(u)=>({infoHash:u.includes(H3)?H3:H1,files:[{path:u.includes(H3)?'Test.Show.S01E02.mkv':'Test.Movie.2010.1080p.mkv',index:0,length:4e9}],trackers:['http://tracker.example/announce']}),
+  stiahnutTorrentData:async(u)=>{
+    const wrap=(hash,filePath)=>({infoHash:hash,files:[{path:filePath,index:0,length:4e9}],trackers:['http://tracker.example/announce']});
+    if(u.includes(H4)) return wrap(H4,'Lucky 2026 S01E01 1080p WEB-DL HEVC.mkv');
+    if(u.includes(H5)) return wrap(H5,'Lucky Louie S01E01 - Pilot 1080p WEBRip CZ EN.mkv');
+    if(u.includes(H6)) return wrap(H6,'Lucky Hank_S01E01_Dil 1.mkv');
+    if(u.includes(H7)) return wrap(H7,'1x36 Pokemon.mkv');
+    if(u.includes(H8)) return wrap(H8,'Pokemon.Horizons.The.Series.S01.E36.1080p.NF.WEB-DL.AAC.2.0.H264.mkv');
+    if(u.includes(H2)) return wrap(H2,'Test.Movie.2010.720p.WEB-DL.mkv');
+    return wrap(u.includes(H3)?H3:H1,u.includes(H3)?'Test.Show.S01E02.mkv':'Test.Movie.2010.1080p.mkv');},
   stiahnutSurovyTorrent:async()=>Buffer.alloc(200)});
-fake('lib/csfd.js',{ziskatCsfdUrl:async()=>null,normalizujUrl:x=>x,vyberNajlepsiVysledok:()=>null});
+fake('lib/csfd.js',{ziskatCsfdUrl:async(id,nazov)=>nazov==='Lucky'?CSFD_LUCKY:null,normalizujUrl:x=>x,vyberNajlepsiVysledok:()=>null});
 const common=require(path.join(ROOT,'lib/common.js'));
 const app=require(path.join(ROOT,'sktorrent-addon.js'));
 const find=(m,p)=>routes.find(r=>r.m===m&&(Array.isArray(r.a[0])?r.a[0].includes(p):r.a[0]===p));
@@ -75,7 +90,15 @@ let fails=0; const ok=(c,msg)=>{console.log((c?'PASS ':'FAIL ')+msg); if(!c)fail
  // P2P
  const p2pCfg=tok({uid:'1',pass:'p',debridProvider:'p2p'});
  r=await call('get','/:config/stream/:type/:id.json',mkreq({config:p2pCfg,type:'movie',id:'tt0000001'}));
- s=r.body.streams; ok(s.length>=1&&s[0].infoHash&&Array.isArray(s[0].sources)&&s[0].sources.length===1&&s[0].name.startsWith('[P2P]'),'P2P: infoHash + trackery (sources)');
+ s=r.body.streams; ok(s.length>=1&&s[0].infoHash&&Array.isArray(s[0].sources)&&s[0].sources.length>=1&&s[0].name.startsWith('[P2P]'),'P2P: infoHash + trackery (sources)');
+ // ČSFD link našiel výsledky -> nesmie to ale prepustiť "Lucky Louie"/"Lucky Hank" z title query
+ r=await call('get','/:config/stream/:type/:id.json',mkreq({config:p2pCfg,type:'series',id:'tt0000009:1:1'}));
+ s=r.body.streams; console.log(' LUCKY:',JSON.stringify(s.map(x=>(x.title||x.name||'').split('\n')[0])));
+ ok(s.length>=1&&/Lucky S01E01/.test(JSON.stringify(s))&&!/Lucky Louie|Lucky Hank/.test(JSON.stringify(s)),'title filter: Lucky Louie/Hank vyradené, Lucky S01E01 ostal');
+ // Pokémon: Horizonty je iný seriál (spin-off) -> nesmie sa zobraziť pri Pokémon S1E36
+ r=await call('get','/:config/stream/:type/:id.json',mkreq({config:p2pCfg,type:'series',id:'tt0168366:1:36'}));
+ s=r.body.streams; console.log(' POKEMON:',JSON.stringify(s.map(x=>(x.title||x.name||'').split('\n')[0])));
+ ok(s.length>=1&&/Indigo League/.test(JSON.stringify(s))&&!/Horizonty/.test(JSON.stringify(s)),'title filter: Pokémon: Horizonty (spin-off) vyradený, Indigo League ostal');
  // legacy ZASA config (torbox bez debridProvider)
  const legCfg=tok({uid:'1',pass:'p',torbox:'KEY',showUncached:true,sizeOrder:'desc',qualityOrder:[4,3,2,1,0]});
  r=await call('get','/:config/stream/:type/:id.json',mkreq({config:legCfg,type:'movie',id:'tt0000001'}));
